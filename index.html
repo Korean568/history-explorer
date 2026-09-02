@@ -913,6 +913,10 @@ const FAR_DIST   = 75;               // 이보다 멀리 가면 멧돼지가 나
 const FAR_CHANCE = 0.25;             // 그때 멧돼지가 나타날 확률
 const FAR_EVERY  = 15;               // 먼 곳에 머무는 동안 몇 초마다 판정하는가
 const FIRE_SAFE  = 12;               // 타오르는 모닥불 둘레 : 멧돼지가 들어오지 못하는 거리
+/* 멧돼지 속도 — 사람은 걸을 때 8.2, 달릴 때 13.9 입니다.
+   걷는 것보다 조금 느리게 두어, 계속 움직이면 따라잡히지 않도록 했습니다. */
+const BOAR_SPEED = 7.4;
+const BOAR_SPEED_VAR = 0.5;
 const Sky = {
   t: 0,           // 하루 안에서 흐른 시간(초) : 0~90 낮 · 90~210 밤
   p: 0,           // 0~1 로 나타낸 하루의 진행도 (시계 막대기용)
@@ -1209,7 +1213,7 @@ const Boars = {
                      dir:Math.random()*TAU, tdir:0, phase:Math.random()*TAU,
                      state:'chase', stun:0, grow:.25,
                      wild: !!wild, life: wild ? 34 : 1e9,
-                     speed: 9.0 + Math.random()*0.6 });
+                     speed: BOAR_SPEED + Math.random()*BOAR_SPEED_VAR });
     Snd.play('boarGrowl', .7);
   },
 
@@ -1333,7 +1337,7 @@ const Boars = {
         tx=fx/fl; tz=fz/fl; sp=b.speed*1.05;
       } else {
         tx=dx/d; tz=dz/d;
-        sp = b.speed * (d>26 ? 1.12 : 1) * (heavy ? 0.55 : 1);
+        sp = b.speed * (d>26 ? 1.08 : 1) * (heavy ? 0.55 : 1);
         chasing = true;
         closest = Math.min(closest, d);
       }
@@ -4550,7 +4554,7 @@ function netApplyBoars(list){
       g.position.set(e.x,0,e.z); g.scale.setScalar(.35);
       b = { nid:e.n, g, x:e.x, z:e.z, tx:e.x, tz:e.z, dir:e.d, tdir:e.d,
             phase:Math.random()*TAU, state:e.s, stun:e.u||0, grow:.35,
-            wild:false, speed:9, life:1e9 };
+            wild:false, speed:BOAR_SPEED, life:1e9 };
       Boars.list.push(b);
     }
     b.tx=e.x; b.tz=e.z; b.tdir=e.d; b.state=e.s; b.stun=e.u||0;
