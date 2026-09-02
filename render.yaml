@@ -10,3 +10,10 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
+    envVars:
+      # 관리자로 쓸 닉네임 (이 닉네임으로 가입한 계정만 관리자 모드를 볼 수 있습니다)
+      - key: ADMIN_USER
+        sync: false
+      # Neon 접속 주소 (없으면 계정이 파일에 저장되어 재배포 때 사라집니다)
+      - key: DATABASE_URL
+        sync: false

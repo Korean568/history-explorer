@@ -12,6 +12,8 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const db   = require('./db');
+const auth = require('./auth');
 
 const PORT = process.env.PORT || 8080;
 
@@ -46,6 +48,48 @@ const server = http.createServer((req, res) => {
         full: r.players.size >= MAX_PLAYERS
       };
     })));
+  }
+
+  /* ---------- 계정 API ---------- */
+  if (url.startsWith('/api/')) {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, Object.assign({
+        'access-control-allow-methods':'GET,POST,OPTIONS',
+        'access-control-allow-headers':'content-type,authorization' }, CORS));
+      return res.end();
+    }
+    const done = (code, obj) => {
+      res.writeHead(code, Object.assign({'content-type':'application/json; charset=utf-8'}, CORS));
+      res.end(JSON.stringify(obj));
+    };
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+             || req.socket.remoteAddress || '?';
+
+    if (url === '/api/me') {
+      const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const who = auth.whoIs(tok);
+      return who ? done(200, { name: who.name, admin: who.admin })
+                 : done(401, { err: '로그인이 필요해요.' });
+    }
+
+    if ((url === '/api/signup' || url === '/api/login') && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => { body += c; if (body.length > 4096) req.destroy(); });
+      req.on('end', async () => {
+        let b; try { b = JSON.parse(body || '{}'); } catch (e) { return done(400, { err:'잘못된 요청' }); }
+        try {
+          const r = url === '/api/signup'
+            ? await auth.signup(b.name, b.pw, ip)
+            : await auth.login(b.name, b.pw, ip);
+          return r.err ? done(400, r) : done(200, r);
+        } catch (e) {
+          console.error(e);
+          return done(500, { err: '서버에 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' });
+        }
+      });
+      return;
+    }
+    return done(404, { err: '없는 주소' });
   }
 
   let rel = url === '/' ? '/index.html' : url;
@@ -148,7 +192,9 @@ wss.on('connection', (ws) => {
     /* ---------- 방 입장 ---------- */
     if (m.t === 'join') {
       if (me) return;
-      const name = String(m.name || '탐험가').slice(0, 12);
+      const who = auth.whoIs(m.token);
+      if (!who) return send(ws, { t:'error', msg:'로그인이 필요해요. 먼저 로그인해 주세요.' });
+      const name = who.name;
       let code = String(m.room || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 
       if (m.create || !code) { code = newCode(); room = makeRoom(code); }
@@ -160,8 +206,12 @@ wss.on('connection', (ws) => {
         }
       }
 
+      /* 같은 계정이 이미 그 방에 있으면 이전 연결을 끊는다 */
+      for (const q of room.players.values())
+        if (q.uname === who.uname) { try { q.ws.close(); } catch (e) {} }
+
       me = {
-        id: nextId++, name, ws,
+        id: nextId++, name, uname: who.uname, admin: who.admin, ws,
         x: 0, z: 44, yaw: 0, mov: 0, dead: false,
         color: (Math.floor(Math.random()*0xffffff) | 0x404040) & 0xdfdfdf
       };
@@ -314,6 +364,13 @@ setInterval(() => {
 setInterval(() => {
   for (const room of rooms.values()) broadcast(room, { t:'sky', t: room.skyT });
 }, 1000);
+
+(async () => {
+  try { await db.init(); await auth.initSecret(); }
+  catch (e) { console.error('저장소 준비 실패:', e.message); }
+  console.log(`계정 저장 방식 : ${db.kind}` +
+    (auth.ADMIN_USER ? ` · 관리자 닉네임 : ${auth.ADMIN_USER}` : ' · 관리자 : 첫 가입자'));
+})();
 
 server.listen(PORT, () => {
   console.log(`역사탐험대 멀티플레이 서버 실행 중 : http://localhost:${PORT}`);

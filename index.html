@@ -101,6 +101,18 @@
   #party span.dead{opacity:.45;text-decoration:line-through;}
   @media (max-width:620px){ #party{max-width:44vw;padding:4px 8px;} #party span{font-size:11px;} }
 
+  /* ----- 계정 ----- */
+  #acct{display:none;justify-content:space-between;align-items:center;gap:8px;
+    background:#fff;border:2.5px solid #e3d5bb;border-radius:12px;
+    padding:6px 10px;margin:0 0 10px;text-align:left;}
+  #acctWho{font-size:13px;font-weight:800;color:#5b4c3d;}
+  #acctWho b{color:var(--clay);}
+  #acctWho .badge{font-size:10.5px;background:var(--sun);border-radius:6px;padding:1px 6px;margin-left:5px;}
+  #mpAuth .mprow{margin-bottom:7px;}
+  #auMsg{margin:6px 0 0;font-size:12.5px;font-weight:700;min-height:16px;color:#7a6653;}
+  #auMsg.err{color:#c0392b;} #auMsg.ok{color:var(--moss);}
+  .authnote{font-size:11.5px;color:#8a7864;line-height:1.5;margin:0 0 8px;}
+
   /* ----- 관리자(교사) 모드 ----- */
   .card{position:relative;}
   #admBtn{position:absolute;top:10px;right:10px;width:40px;height:40px;border-radius:12px;
@@ -355,6 +367,7 @@
 <!-- 시작 화면 -->
 <div id="start">
   <div class="card">
+    <div id="acct"><span id="acctWho"></span><button class="mini2" id="acctOut">로그아웃</button></div>
     <h1>🏕️ 역사탐험대<br>선사시대 생존기</h1>
     <p class="sub">시간 여행을 통해 <b>구석기 → 신석기 → 청동기</b> 시대를 탐험하세요!<br>
       롭이 알려 주는 <b>순서</b>를 모두 마치면 다음 시대로 이동합니다.</p>
@@ -403,8 +416,20 @@
 
     <div id="mp">
       <h3>👥 함께 탐험하기</h3>
-      <div class="mprow"><input id="mpName" placeholder="내 이름을 적어 주세요" maxlength="12"></div>
-      <button class="mini" id="mpCreate" style="width:100%">🏕️ 새 방 만들기</button>
+
+      <div id="mpAuth">
+        <p class="authnote">함께 탐험하려면 <b>닉네임</b>이 필요해요.
+          처음이라면 <b>회원가입</b>을, 이미 만들었다면 <b>로그인</b>을 눌러 주세요.</p>
+        <div class="mprow"><input id="auName" placeholder="닉네임 (2~12자)" maxlength="12" autocomplete="username"></div>
+        <div class="mprow"><input id="auPw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password"></div>
+        <div class="mprow">
+          <button class="mini" id="auLogin" style="flex:1">로그인</button>
+          <button class="mini" id="auSignup" style="flex:1;background:var(--moss);border-bottom-color:#33521f">회원가입</button>
+        </div>
+        <p id="auMsg"></p>
+      </div>
+
+      <button class="mini" id="mpCreate" style="width:100%;display:none">🏕️ 새 방 만들기</button>
 
       <div class="mphead"><span>🚪 열려 있는 방</span><button class="mini2" id="mpRefresh">🔄 새로고침</button></div>
       <div id="mpRooms"><p class="empty">방을 찾는 중…</p></div>
@@ -427,15 +452,11 @@
       </details>
     </div>
 
-    <button id="admBtn" title="관리자 모드">⚙</button>
+    <button id="admBtn" title="관리자 모드" style="display:none">⚙</button>
     <div id="adm" style="display:none">
       <h3>🔧 관리자 모드 (수업 준비용)</h3>
-      <div class="admrow">
-        <input id="admpw" type="password" autocomplete="off" placeholder="비밀번호">
-        <button class="mini" id="admOk">확인</button>
-      </div>
       <p id="admMsg"></p>
-      <div id="admList" style="display:none">
+      <div id="admList">
         <button class="mini" data-era="0">🪨 구석기 시대부터 시작</button>
         <button class="mini" data-era="1">🌱 신석기 시대로 바로 가기</button>
         <button class="mini" data-era="2">⚒️ 청동기 시대로 바로 가기</button>
@@ -1702,7 +1723,7 @@ const Net = {
     let opened = false;
     const fail = ()=>{ if(!opened) done('서버에 연결할 수 없어요 — 아래 ⚙️ 서버 주소 설정에 주소를 넣어 주세요. ('+url+')'); };
     sock.onopen = ()=>{ opened = true;
-      sock.send(JSON.stringify({t:'join', create:!!create, room:code||'', name:this.name})); };
+      sock.send(JSON.stringify({t:'join', create:!!create, room:code||'', token:Me.token})); };
     sock.onerror = fail;
     sock.onclose = ()=>{
       if(!opened) return fail();
@@ -5113,6 +5134,62 @@ function beginGame(eraIndex){
 }
 $('#go').addEventListener('click',()=>beginGame(0));
 
+/* =========================================================
+   계정 : 회원가입 · 로그인
+   ========================================================= */
+const Me = {
+  token: localStorage.getItem('histToken') || null,
+  name: null, admin: false,
+
+  async api(path, body){
+    const opt = { method: body ? 'POST' : 'GET', headers:{} };
+    if(body){ opt.headers['content-type']='application/json'; opt.body=JSON.stringify(body); }
+    if(this.token) opt.headers['authorization'] = 'Bearer ' + this.token;
+    const r = await fetch(Net.httpBase() + path, opt);
+    let j = {};
+    try{ j = await r.json(); }catch(e){}
+    if(!r.ok) throw new Error(j.err || '서버에 연결할 수 없어요.');
+    return j;
+  },
+
+  set(j){
+    this.token = j.token || this.token;
+    this.name = j.name; this.admin = !!j.admin;
+    if(j.token) localStorage.setItem('histToken', j.token);
+    this.draw();
+  },
+  clear(){
+    this.token = null; this.name = null; this.admin = false;
+    localStorage.removeItem('histToken');
+    this.draw();
+  },
+  get on(){ return !!this.name; },
+
+  draw(){
+    const box = $('#acct'), who = $('#acctWho'), admBtn = $('#admBtn');
+    if(this.on){
+      box.style.display = 'flex';
+      who.innerHTML = `👤 <b>${this.name}</b> 님` +
+        (this.admin ? '<span class="badge">관리자</span>' : '');
+    } else box.style.display = 'none';
+    if(admBtn) admBtn.style.display = this.admin ? 'block' : 'none';
+    if(!this.admin){ const a=$('#adm'); if(a) a.style.display='none'; }
+    /* 로그인 여부에 따라 멀티플레이 화면 전환 */
+    const auth = $('#mpAuth'), create = $('#mpCreate');
+    if(auth)   auth.style.display   = this.on ? 'none'  : 'block';
+    if(create) create.style.display = this.on ? 'block' : 'none';
+    const head = document.querySelector('.mphead'), rooms = $('#mpRooms');
+    if(head)  head.style.display  = this.on ? 'flex' : 'none';
+    if(rooms) rooms.style.display = this.on ? 'grid' : 'none';
+  },
+
+  async restore(){
+    if(!this.token){ this.draw(); return; }
+    try{ this.set(await this.api('/api/me')); }
+    catch(e){ this.clear(); }
+  }
+};
+
 /* ---------- 함께 탐험하기 (로비) ---------- */
 function mpMsg(t, cls){ const e=$('#mpMsg'); e.textContent=t||''; e.className=cls||''; }
 /* 탐험 시작 버튼 : 방장만 누를 수 있다 */
@@ -5130,21 +5207,39 @@ function mpStartBtn(){
   }
 }
 (function lobby(){
-  const nameEl=$('#mpName'), urlEl=$('#mpUrl'), roomsEl=$('#mpRooms');
+  const urlEl=$('#mpUrl'), roomsEl=$('#mpRooms');
   let poll = null;
-  nameEl.value = localStorage.getItem('histName') || '';
-  urlEl.value  = localStorage.getItem('histServer') || '';
+  urlEl.value = localStorage.getItem('histServer') || '';
   urlEl.addEventListener('change', ()=>{
-    localStorage.setItem('histServer', (urlEl.value||'').trim()); refreshRooms(); });
+    localStorage.setItem('histServer', (urlEl.value||'').trim());
+    Me.restore(); refreshRooms(); });
 
-  const myName = ()=>{
-    const n = (nameEl.value||'').trim() || '탐험가';
-    localStorage.setItem('histName', n); return n;
-  };
+  /* ---------- 로그인 · 회원가입 ---------- */
+  const auMsg = (t,c)=>{ const e=$('#auMsg'); e.textContent=t||''; e.className=c||''; };
+  async function auth(path){
+    const name = ($('#auName').value||'').trim();
+    const pw   = $('#auPw').value||'';
+    if(!name){ auMsg('닉네임을 입력해 주세요.','err'); return; }
+    if(!pw){   auMsg('비밀번호를 입력해 주세요.','err'); return; }
+    auMsg('확인하는 중…');
+    try{
+      Me.set(await Me.api(path, {name, pw}));
+      $('#auPw').value = '';
+      auMsg('');
+      refreshRooms();
+    }catch(e){ auMsg(e.message, 'err'); }
+  }
+  $('#auLogin').addEventListener('click', ()=>auth('/api/login'));
+  $('#auSignup').addEventListener('click', ()=>auth('/api/signup'));
+  $('#auPw').addEventListener('keydown', e=>{ if(e.key==='Enter') auth('/api/login'); });
+  $('#acctOut').addEventListener('click', ()=>{
+    Net.leave(); Me.clear(); auMsg('로그아웃했어요.','ok');
+    $('#mpRoom').style.display='none'; $('#mpRefresh').style.display='';
+  });
 
   /* 열려 있는 방 목록 */
   async function refreshRooms(){
-    if(Net.on) return;                       // 이미 들어와 있으면 목록을 갱신하지 않는다
+    if(Net.on || !Me.on) return;             // 로그인 전이거나 이미 들어와 있으면 넘어간다
     try{
       const res = await fetch(Net.httpBase()+'/rooms', {cache:'no-store'});
       const list = await res.json();
@@ -5170,8 +5265,9 @@ function mpStartBtn(){
   }
 
   function enter(create, code){
+    if(!Me.on){ auMsg('먼저 로그인해 주세요.','err'); return; }
     mpMsg('연결하는 중…');
-    Net.connect(create, code, myName(), (err, m)=>{
+    Net.connect(create, code, Me.name, (err, m)=>{
       if(err){ mpMsg(err,'err'); return; }
       mpMsg('✅ 방에 들어왔어요!','ok');
       $('#mpRoom').style.display='block';
@@ -5186,7 +5282,8 @@ function mpStartBtn(){
   function openMulti(){
     $('#modes').style.display='none';
     $('#mp').style.display='block';
-    mpMsg('');
+    mpMsg(''); auMsg('');
+    Me.draw();
     refreshRooms();
     clearInterval(poll); poll = setInterval(refreshRooms, 3000);
   }
@@ -5200,6 +5297,7 @@ function mpStartBtn(){
     mpMsg('');
   }
 
+  Me.restore();
   $('#goMulti').addEventListener('click', openMulti);
   $('#mpBack').addEventListener('click', backHome);
   $('#mpRefresh').addEventListener('click', refreshRooms);
@@ -5219,61 +5317,22 @@ function mpStartBtn(){
 
 /* ---------- 관리자 모드 : 시대 바로 이동 ---------- */
 (function admin(){
-  /* 비밀번호는 코드에 남기지 않고 해시값만 둔다 (소스 보기로 읽히지 않게).
-     ⚠️ 브라우저에서 돌아가는 검사라 개발자도구를 쓰면 우회할 수 있습니다.
-        수업 중 실수로 누르는 것을 막는 용도입니다. */
-  const ADM_HASH='d1f1274698f13f0a930d4aa411452c6a';
-  function admHash(str){
-    let h1=0x811c9dc5,h2=0x01000193,h3=0xdeadbeef,h4=0x9e3779b9;
-    for(let i=0;i<str.length;i++){
-      const c=str.charCodeAt(i);
-      h1=Math.imul(h1^c,16777619);
-      h2=Math.imul(h2+c+i,2246822519)^(h1>>>7);
-      h3=Math.imul(h3^(c*(i+3)),3266489917)^(h2>>>11);
-      h4=Math.imul(h4+(c<<(i%13)),668265263)^(h3>>>5);
-    }
-    const f=x=>(x>>>0).toString(16).padStart(8,'0');
-    return f(h1)+f(h2)+f(h3)+f(h4);
-  }
-  let tries=0, lockUntil=0;
+  /* 관리자 여부는 서버가 로그인할 때 알려 줍니다.
+     브라우저 쪽 비밀번호가 아니라 계정으로 확인하므로 우회할 수 없습니다. */
   const box=document.getElementById('adm'), btn=document.getElementById('admBtn'),
-        pw=document.getElementById('admpw'), ok=document.getElementById('admOk'),
         list=document.getElementById('admList'), note=document.getElementById('admMsg');
-  let unlocked=false;
 
   btn.addEventListener('click',()=>{
+    if(!Me.admin) return;
     const open = box.style.display==='none';
     box.style.display = open ? 'block' : 'none';
-    if(open && !unlocked){ note.textContent=''; pw.value=''; setTimeout(()=>pw.focus(),50); }
+    note.style.color='#4e7a3a';
+    note.textContent = `${Me.name} 님 · 시작할 시대를 고르세요.`;
   });
-
-  function tryUnlock(){
-    if(Date.now() < lockUntil){
-      note.style.color='#c0392b';
-      note.textContent=`너무 여러 번 틀렸어요. ${Math.ceil((lockUntil-Date.now())/1000)}초 뒤에 다시 시도하세요.`;
-      return;
-    }
-    if(admHash(pw.value.trim())===ADM_HASH){
-      unlocked=true; tries=0;
-      list.style.display='grid';
-      pw.parentElement.style.display='none';
-      note.style.color='#4e7a3a';
-      note.textContent='잠금 해제됨 · 시작할 시대를 고르세요.';
-    } else {
-      tries++;
-      note.style.color='#c0392b';
-      if(tries>=5){ lockUntil = Date.now()+30000; tries=0;
-        note.textContent='너무 여러 번 틀렸어요. 30초 뒤에 다시 시도하세요.'; }
-      else note.textContent=`비밀번호가 올바르지 않습니다. (${tries}/5)`;
-      pw.value=''; pw.focus();
-    }
-  }
-  ok.addEventListener('click',tryUnlock);
-  pw.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); tryUnlock(); } });
 
   list.addEventListener('click',e=>{
     const b=e.target.closest('button[data-era]');
-    if(!b || !unlocked) return;
+    if(!b || !Me.admin) return;
     beginGame(parseInt(b.dataset.era,10));
   });
 })();

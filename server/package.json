@@ -4,11 +4,14 @@
   "description": "역사탐험대 : 선사시대 생존기 — 멀티플레이 서버",
   "main": "index.js",
   "type": "commonjs",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "pg": "^8.13.1"
   }
 }
