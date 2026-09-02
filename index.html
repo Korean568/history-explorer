@@ -26,28 +26,29 @@
   #app{position:fixed;inset:0;}
 
   /* ---------- 시작 화면 ---------- */
-  #start{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+  #start{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;justify-content:center;
     background:radial-gradient(120% 90% at 50% 0%, #bfe6ff 0%, #8fd0a8 55%, #5f9c55 100%);
-    padding:24px;overflow:auto;}
-  .card{background:var(--paper);border:5px solid var(--bark);border-radius:26px;max-width:620px;width:100%;
-    padding:28px 26px 24px;box-shadow:0 14px 0 rgba(60,40,20,.28);text-align:center;}
-  .card h1{margin:0 0 6px;font-size:clamp(24px,5.5vw,36px);letter-spacing:-.5px;line-height:1.25;}
-  .sub{margin:0 0 18px;color:#6b5a49;font-size:15px;line-height:1.6;}
-  .keys{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;margin:0 0 20px;}
-  .keys section{background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px 14px;}
-  .keys h3{margin:0 0 8px;font-size:15px;}
-  .keys p{margin:4px 0;font-size:13.5px;color:#5b4c3d;line-height:1.5;}
-  .big{display:block;width:100%;padding:16px;font-size:20px;font-weight:800;color:#fff;background:var(--clay);
-    border:none;border-bottom:5px solid #8f4a20;border-radius:16px;cursor:pointer;font-family:inherit;}
+    padding:18px;overflow:auto;}
+  .card{background:var(--paper);border:5px solid var(--bark);border-radius:24px;max-width:600px;width:100%;
+    margin:auto;                       /* 내용이 길어도 위가 잘리지 않게 */
+    padding:20px 20px 18px;box-shadow:0 12px 0 rgba(60,40,20,.28);text-align:center;}
+  .card h1{margin:0 0 4px;font-size:clamp(20px,4.6vw,28px);letter-spacing:-.5px;line-height:1.25;}
+  .sub{margin:0 0 12px;color:#6b5a49;font-size:13px;line-height:1.55;}
+  .keys{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin:0 0 12px;}
+  .keys section{background:#fff;border:2.5px solid #e3d5bb;border-radius:13px;padding:9px 11px;}
+  .keys h3{margin:0 0 5px;font-size:13px;}
+  .keys p{margin:2px 0;font-size:11.5px;color:#5b4c3d;line-height:1.45;}
+  .big{display:block;width:100%;padding:13px;font-size:17.5px;font-weight:800;color:#fff;background:var(--clay);
+    border:none;border-bottom:5px solid #8f4a20;border-radius:15px;cursor:pointer;font-family:inherit;}
   .big:active{transform:translateY(3px);border-bottom-width:2px;}
   @media (max-width:520px){ .keys{grid-template-columns:1fr;} }
 
   /* ----- 모드 선택 ----- */
-  #modes{display:grid;gap:10px;}
+  #modes{display:grid;gap:8px;}
   #goMulti{background:var(--moss);border-bottom-color:#33521f;}
 
   /* ----- 함께 탐험하기 (멀티플레이) ----- */
-  #mp{display:none;margin-top:16px;padding-top:14px;border-top:3px dashed #e3d5bb;text-align:left;}
+  #mp{display:none;margin-top:12px;padding-top:12px;border-top:3px dashed #e3d5bb;text-align:left;}
   .mphead{display:flex;justify-content:space-between;align-items:center;
     margin:14px 0 6px;font-size:13.5px;font-weight:800;color:#7a6653;}
   .mini2{padding:6px 11px;font-size:13px;border:none;border-radius:10px;background:#e3d5bb;
@@ -55,7 +56,7 @@
   .mini2:active{transform:translateY(2px);}
   #mpRooms{display:grid;gap:8px;max-height:250px;overflow:auto;}
   .room{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;
-    padding:12px 14px;border:3px solid #e3d5bb;border-radius:14px;background:#fff;
+    padding:10px 12px;border:2.5px solid #e3d5bb;border-radius:13px;background:#fff;
     font-family:inherit;cursor:pointer;text-align:left;}
   .room:hover:not(:disabled){border-color:var(--clay);background:#fffaf0;}
   .room:active:not(:disabled){transform:translateY(2px);}
@@ -71,7 +72,7 @@
   #mpBack{width:100%;margin-top:12px;background:#8b8378;border-bottom-color:#5d574f;}
   #mp h3{margin:0 0 8px;font-size:15px;color:#7a6653;}
   .mprow{display:flex;gap:8px;margin-bottom:8px;}
-  .mprow input{flex:1;min-width:0;padding:11px 13px;font-size:15px;font-family:inherit;
+  .mprow input{flex:1;min-width:0;padding:9px 12px;font-size:14px;font-family:inherit;
     border:3px solid #e3d5bb;border-radius:12px;background:#fff;color:var(--ink);}
   .mprow input:focus{outline:none;border-color:var(--clay);}
   #mpCreate{width:100%;background:var(--moss);border-bottom-color:#33521f;}
@@ -199,7 +200,7 @@
   .stage svg{overflow:visible;}
 
   /* ---------- 오버레이 / 미니게임 ---------- */
-  #veil{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;
+  #veil{position:fixed;inset:0;z-index:40;display:none;align-items:flex-start;justify-content:center;
     background:rgba(30,22,14,.55);backdrop-filter:blur(3px);padding:20px;pointer-events:auto;}
   #veil .card{max-width:460px;}
   #veil h2{margin:0 0 10px;font-size:clamp(21px,5vw,28px);}
@@ -377,9 +378,9 @@
         <p><b>아이템창 — 도구 들기/내리기</b> → <b>⚔️ 공격</b></p>
       </section>
     </div>
-    <div class="sub" style="margin:-6px 0 16px;font-size:13.5px;text-align:left;
-        background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px 14px;line-height:1.75">
-      <p style="margin:0 0 6px;font-weight:800;color:var(--clay);text-align:center">
+    <div class="sub" style="margin:-2px 0 12px;font-size:12px;text-align:left;
+        background:#fff;border:2.5px solid #e3d5bb;border-radius:14px;padding:10px 12px;line-height:1.55">
+      <p style="margin:0 0 4px;font-weight:800;color:var(--clay);text-align:center;font-size:13px">
         🤖 AI 도우미 <b>롭</b>이 순서를 알려 줍니다!</p>
       <p style="margin:0">👥 <b>여럿이 함께 탐험하기</b>를 누르면 열려 있는 방이 보여요.
         눌러서 바로 들어가거나, 새 방을 만들어 친구를 기다리세요.</p>
