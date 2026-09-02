@@ -42,21 +42,45 @@
   .big:active{transform:translateY(3px);border-bottom-width:2px;}
   @media (max-width:520px){ .keys{grid-template-columns:1fr;} }
 
+  /* ----- 모드 선택 ----- */
+  #modes{display:grid;gap:10px;}
+  #goMulti{background:var(--moss);border-bottom-color:#33521f;}
+
   /* ----- 함께 탐험하기 (멀티플레이) ----- */
-  #mp{margin-top:16px;padding-top:14px;border-top:3px dashed #e3d5bb;text-align:left;}
+  #mp{display:none;margin-top:16px;padding-top:14px;border-top:3px dashed #e3d5bb;text-align:left;}
+  .mphead{display:flex;justify-content:space-between;align-items:center;
+    margin:14px 0 6px;font-size:13.5px;font-weight:800;color:#7a6653;}
+  .mini2{padding:6px 11px;font-size:13px;border:none;border-radius:10px;background:#e3d5bb;
+    font-family:inherit;font-weight:800;cursor:pointer;color:#5c4433;}
+  .mini2:active{transform:translateY(2px);}
+  #mpRooms{display:grid;gap:8px;max-height:250px;overflow:auto;}
+  .room{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;
+    padding:12px 14px;border:3px solid #e3d5bb;border-radius:14px;background:#fff;
+    font-family:inherit;cursor:pointer;text-align:left;}
+  .room:hover:not(:disabled){border-color:var(--clay);background:#fffaf0;}
+  .room:active:not(:disabled){transform:translateY(2px);}
+  .room .who{font-size:15.5px;font-weight:800;color:var(--ink);}
+  .room .sub{font-size:12.5px;color:#8a7864;font-weight:700;margin-top:2px;}
+  .room .enter{flex:0 0 auto;font-size:13px;font-weight:800;color:#fff;background:var(--clay);
+    border-radius:10px;padding:6px 12px;}
+  .room:disabled{opacity:.5;cursor:not-allowed;}
+  .room:disabled .enter{background:#8b8378;}
+  .empty{font-size:13.5px;color:#8a7864;text-align:center;padding:16px 6px;line-height:1.8;
+    background:#fff;border:3px dashed #e3d5bb;border-radius:14px;margin:0;}
+  .empty.err{color:#c0392b;border-color:#f0c8c0;}
+  #mpBack{width:100%;margin-top:12px;background:#8b8378;border-bottom-color:#5d574f;}
   #mp h3{margin:0 0 8px;font-size:15px;color:#7a6653;}
   .mprow{display:flex;gap:8px;margin-bottom:8px;}
   .mprow input{flex:1;min-width:0;padding:11px 13px;font-size:15px;font-family:inherit;
     border:3px solid #e3d5bb;border-radius:12px;background:#fff;color:var(--ink);}
   .mprow input:focus{outline:none;border-color:var(--clay);}
-  #mpCode{text-transform:uppercase;letter-spacing:2px;font-weight:800;}
   #mpCreate{width:100%;background:var(--moss);border-bottom-color:#33521f;}
   #mpMsg{margin:8px 0 0;font-size:13.5px;font-weight:700;min-height:18px;color:#7a6653;}
   #mpMsg.err{color:#c0392b;}
   #mpMsg.ok{color:var(--moss);}
   #mpRoom{display:none;background:#fff;border:3px solid #e3d5bb;border-radius:14px;
     padding:12px 14px;margin-top:10px;}
-  #mpRoom .code{font-size:30px;font-weight:900;letter-spacing:6px;color:var(--clay);text-align:center;}
+  #mpRoom .code{font-size:17px;font-weight:900;letter-spacing:4px;color:var(--clay);text-align:center;}
   #mpRoom .hint{font-size:12.5px;color:#8a7864;text-align:center;margin:2px 0 8px;}
   #mpRoom ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;}
   #mpRoom li{font-size:13px;font-weight:800;background:#f3ead6;border-radius:9px;padding:3px 9px;}
@@ -357,6 +381,8 @@
         background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px 14px;line-height:1.75">
       <p style="margin:0 0 6px;font-weight:800;color:var(--clay);text-align:center">
         🤖 AI 도우미 <b>롭</b>이 순서를 알려 줍니다!</p>
+      <p style="margin:0">👥 <b>여럿이 함께 탐험하기</b>를 누르면 열려 있는 방이 보여요.
+        눌러서 바로 들어가거나, 새 방을 만들어 친구를 기다리세요.</p>
       <p style="margin:0">💡 달리기는 <b>누르고 있는 동안만</b> 작동해요.</p>
       <p style="margin:0">🌙 <b>낮 2분 · 밤 30초</b>가 번갈아 찾아오고, 밤에는 <b>멧돼지</b>가 쫓아와요.</p>
       <p style="margin:0">🪓 낮에 <b>나무를 5그루</b> 베어 두면 밤에 <b>모닥불이 타올라</b> 안전합니다.
@@ -369,22 +395,27 @@
         <b>뗀석기·간석기</b>는 멧돼지를 <b>5초 기절</b>시키고,
         청동기의 <b>비파형 동검</b>은 아예 물리칩니다!</p>
     </div>
-    <button class="big" id="go">🧍 혼자 탐험 시작</button>
+    <div id="modes">
+      <button class="big" id="go">🧍 혼자 탐험하기</button>
+      <button class="big" id="goMulti">👥 여럿이 함께 탐험하기</button>
+    </div>
 
     <div id="mp">
       <h3>👥 함께 탐험하기</h3>
-      <div class="mprow"><input id="mpName" placeholder="내 이름" maxlength="12"></div>
-      <div class="mprow">
-        <input id="mpCode" placeholder="방 코드 (예: A7K2)" maxlength="6" autocomplete="off">
-        <button class="mini" id="mpJoin">참가</button>
-      </div>
-      <button class="mini" id="mpCreate">🏕️ 새 방 만들기</button>
+      <div class="mprow"><input id="mpName" placeholder="내 이름을 적어 주세요" maxlength="12"></div>
+      <button class="mini" id="mpCreate" style="width:100%">🏕️ 새 방 만들기</button>
+
+      <div class="mphead"><span>🚪 열려 있는 방</span><button class="mini2" id="mpRefresh">🔄 새로고침</button></div>
+      <div id="mpRooms"><p class="empty">방을 찾는 중…</p></div>
+
       <p id="mpMsg"></p>
       <div id="mpRoom">
         <div class="code" id="mpRoomCode">----</div>
-        <p class="hint">이 코드를 친구에게 알려 주세요</p>
+        <p class="hint">함께 탐험할 친구들</p>
         <ul id="mpList"></ul>
+        <button class="big" id="mpStart" style="margin-top:12px">👥 함께 탐험 시작</button>
       </div>
+      <button class="mini" id="mpBack">← 처음으로 돌아가기</button>
       <details id="mpAdv">
         <summary>⚙️ 서버 주소 설정 (보통은 건드리지 않아도 됩니다)</summary>
         <p style="font-size:12px;color:#8a7864;margin:6px 0 0;line-height:1.6">
@@ -1631,7 +1662,7 @@ function nameTag(text){
 }
 
 const Net = {
-  ws:null, on:false, id:0, code:'', host:false, name:'탐험가',
+  ws:null, on:false, id:0, code:'', host:false, started:false, name:'탐험가',
   players:new Map(),          // id -> {name,color,x,z,yaw,mov,dead, g, tag, cx,cz,cyaw}
   mine:{},                    // 마지막으로 서버에 보낸 공유 자원 값
   missionSent:{},
@@ -1653,6 +1684,10 @@ const Net = {
     return clean(new URLSearchParams(location.search).get('server'))
         || clean(localStorage.getItem('histServer'))
         || (location.protocol==='https:'?'wss://':'ws://') + location.host + '/ws';
+  },
+
+  httpBase(){
+    return this.url().replace(/^ws/i,'http').replace(/\/ws$/i,'');
   },
 
   connect(create, code, name, done){
@@ -1683,7 +1718,7 @@ const Net = {
   send(o){ if(this.on && this.ws && this.ws.readyState===1){
     try{ this.ws.send(JSON.stringify(o)); }catch(e){} } },
 
-  leave(){ this.on=false; this.clearAvatars();
+  leave(){ this.on=false; this.started=false; this.clearAvatars();
     try{ if(this.ws) this.ws.close(); }catch(e){}
     this.ws=null; elParty.style.display='none'; },
 
@@ -1703,7 +1738,14 @@ const Net = {
         this.pendingMissions = m.missions || {};
         this.pendingUsed = m.used || [];
         this.pendingSky = m.sky || 0;
+        this.started = !!m.started;
         if(done) done(null, m);
+        break;
+
+      case 'start':
+        this.started = true;
+        mpStartBtn();
+        if(!gameBegun) beginGame(0);
         break;
 
       case 'joined': this.addPlayer(m.player); this.drawParty(); break;
@@ -1711,6 +1753,7 @@ const Net = {
       case 'host':
         this.host = (m.id === this.id);
         if(this.host){ Boars.list.length = 0; toast('👑 이제 내가 방장이에요'); }
+        mpStartBtn();
         break;
 
       case 'pos': {
@@ -5055,7 +5098,10 @@ addEventListener('resize',()=>{
 /* =========================================================
    12. 시작
    ========================================================= */
+let gameBegun = false;
 function beginGame(eraIndex){
+  if(gameBegun) return;
+  gameBegun = true;
   Snd.init(); Snd.resume();                 // [탐험 시작]을 누른 순간 오디오 활성화
   if(!Net.on) S.eraIndex = eraIndex || 0;      // 함께 탐험할 때는 서버가 알려 준 시대로
   S.foodCarry = null;
@@ -5068,38 +5114,106 @@ $('#go').addEventListener('click',()=>beginGame(0));
 
 /* ---------- 함께 탐험하기 (로비) ---------- */
 function mpMsg(t, cls){ const e=$('#mpMsg'); e.textContent=t||''; e.className=cls||''; }
+/* 탐험 시작 버튼 : 방장만 누를 수 있다 */
+function mpStartBtn(){
+  const b = $('#mpStart'); if(!b) return;
+  if(Net.host){
+    b.disabled = false; b.textContent = '👥 함께 탐험 시작';
+    b.style.background = ''; b.style.borderBottomColor = '';
+  } else if(Net.started){
+    b.disabled = false; b.textContent = '👥 지금 바로 참가하기';
+    b.style.background = ''; b.style.borderBottomColor = '';
+  } else {
+    b.disabled = true; b.textContent = '⏳ 방장이 시작하기를 기다리는 중…';
+    b.style.background = '#8b8378'; b.style.borderBottomColor = '#5d574f';
+  }
+}
 (function lobby(){
-  const nameEl=$('#mpName'), codeEl=$('#mpCode'), urlEl=$('#mpUrl');
+  const nameEl=$('#mpName'), urlEl=$('#mpUrl'), roomsEl=$('#mpRooms');
+  let poll = null;
   nameEl.value = localStorage.getItem('histName') || '';
   urlEl.value  = localStorage.getItem('histServer') || '';
-  urlEl.addEventListener('change', ()=>
-    localStorage.setItem('histServer', (urlEl.value||'').trim()));
-  codeEl.addEventListener('input', ()=>
-    codeEl.value = codeEl.value.toUpperCase().replace(/[^A-Z0-9]/g,''));
+  urlEl.addEventListener('change', ()=>{
+    localStorage.setItem('histServer', (urlEl.value||'').trim()); refreshRooms(); });
 
-  function go(create){
-    const name = (nameEl.value||'').trim() || '탐험가';
-    localStorage.setItem('histName', name);
-    const code = (codeEl.value||'').trim().toUpperCase();
-    if(!create && !code){ mpMsg('방 코드를 입력해 주세요.','err'); return; }
+  const myName = ()=>{
+    const n = (nameEl.value||'').trim() || '탐험가';
+    localStorage.setItem('histName', n); return n;
+  };
+
+  /* 열려 있는 방 목록 */
+  async function refreshRooms(){
+    if(Net.on) return;                       // 이미 들어와 있으면 목록을 갱신하지 않는다
+    try{
+      const res = await fetch(Net.httpBase()+'/rooms', {cache:'no-store'});
+      const list = await res.json();
+      if(!list.length){
+        roomsEl.innerHTML = '<p class="empty">아직 열려 있는 방이 없어요.<br>' +
+          '위의 <b>🏕️ 새 방 만들기</b> 를 눌러 방을 만들어 보세요!</p>';
+        return;
+      }
+      roomsEl.innerHTML = list.map(x=>{
+        const era = ERAS[x.era] ? ERAS[x.era].icon+' '+ERAS[x.era].name : '';
+        return `<button class="room" data-code="${x.code}" ${x.full?'disabled':''}>
+            <span><span class="who">${x.host} 님의 방</span>
+              <span class="sub">${era} · ${x.players}명${x.full?' · 가득 참':''}</span></span>
+            <span class="enter">${x.full?'가득 참':'들어가기'}</span>
+          </button>`;
+      }).join('');
+      roomsEl.querySelectorAll('.room').forEach(b=>
+        b.addEventListener('click', ()=> enter(false, b.dataset.code)));
+    }catch(e){
+      roomsEl.innerHTML = '<p class="empty err">서버에 연결할 수 없어요.<br>' +
+        '아래 ⚙️ 서버 주소 설정을 확인해 주세요.</p>';
+    }
+  }
+
+  function enter(create, code){
     mpMsg('연결하는 중…');
-    Net.connect(create, code, name, (err, m)=>{
+    Net.connect(create, code, myName(), (err, m)=>{
       if(err){ mpMsg(err,'err'); return; }
-      mpMsg('✅ 방에 들어왔어요! 아래 버튼으로 탐험을 시작하세요.','ok');
+      mpMsg('✅ 방에 들어왔어요!','ok');
       $('#mpRoom').style.display='block';
       $('#mpRoomCode').textContent = m.code;
-      codeEl.value = m.code;
-      $('#go').textContent = '👥 함께 탐험 시작';
+      roomsEl.innerHTML = '';
+      $('#mpRefresh').style.display = 'none';
+      mpStartBtn();
       Net.drawParty();
     });
   }
+
+  function openMulti(){
+    $('#modes').style.display='none';
+    $('#mp').style.display='block';
+    mpMsg('');
+    refreshRooms();
+    clearInterval(poll); poll = setInterval(refreshRooms, 3000);
+  }
+  function backHome(){
+    clearInterval(poll); poll = null;
+    Net.leave();
+    $('#mpRoom').style.display='none';
+    $('#mpRefresh').style.display='';
+    $('#mp').style.display='none';
+    $('#modes').style.display='grid';
+    mpMsg('');
+  }
+
+  $('#goMulti').addEventListener('click', openMulti);
+  $('#mpBack').addEventListener('click', backHome);
+  $('#mpRefresh').addEventListener('click', refreshRooms);
+  $('#mpCreate').addEventListener('click', ()=> enter(true, ''));
+  $('#mpStart').addEventListener('click', ()=>{
+    if(!Net.on) return;
+    clearInterval(poll);
+    if(Net.host) Net.send({t:'start'});     // 서버가 모두에게 시작을 알린다
+    else if(Net.started) beginGame(0);      // 이미 시작된 방에 늦게 들어온 경우
+  });
   $('#mpUrlClear').addEventListener('click', ()=>{
     urlEl.value=''; localStorage.removeItem('histServer');
-    mpMsg('✅ 서버 주소를 비웠어요. 이제 자동으로 연결됩니다.','ok');
+    mpMsg('✅ 서버 주소를 비웠어요. 자동으로 연결됩니다.','ok');
+    refreshRooms();
   });
-  $('#mpCreate').addEventListener('click', ()=>go(true));
-  $('#mpJoin').addEventListener('click',   ()=>go(false));
-  codeEl.addEventListener('keydown', e=>{ if(e.key==='Enter') go(false); });
 })();
 
 /* ---------- 관리자 모드 : 시대 바로 이동 ---------- */

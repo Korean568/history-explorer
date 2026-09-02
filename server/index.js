@@ -29,11 +29,23 @@ const MIME = {
    --------------------------------------------------------- */
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
-  if (url === '/health') { res.writeHead(200); return res.end('ok'); }
-  if (url === '/rooms') {                      // 운영 확인용
-    res.writeHead(200, {'content-type':'application/json; charset=utf-8'});
-    return res.end(JSON.stringify(
-      [...rooms.values()].map(r => ({ code:r.code, players:r.players.size, era:r.era }))));
+  const CORS = { 'access-control-allow-origin':'*', 'cache-control':'no-store' };
+  if (url === '/health') {
+    res.writeHead(200, Object.assign({'content-type':'text/plain'}, CORS));
+    return res.end('ok');
+  }
+  if (url === '/rooms') {                      // 시작 화면의 "열려 있는 방" 목록
+    res.writeHead(200, Object.assign({'content-type':'application/json; charset=utf-8'}, CORS));
+    return res.end(JSON.stringify([...rooms.values()].map(r => {
+      const host = r.players.get(r.hostId);
+      return {
+        code: r.code,
+        host: host ? host.name : '탐험가',
+        players: r.players.size,
+        era: r.era,
+        full: r.players.size >= MAX_PLAYERS
+      };
+    })));
   }
 
   let rel = url === '/' ? '/index.html' : url;
@@ -71,6 +83,7 @@ function makeRoom(code){
     players: new Map(),
     hostId: null,
     era: 0,
+    started: false,        // 방장이 탐험을 시작했는가
     skyT: 0,
     shared: freshShared(),
     missions: {},
@@ -158,7 +171,7 @@ wss.on('connection', (ws) => {
       send(ws, {
         t:'welcome', id: me.id, code: room.code, host: room.hostId === me.id,
         players: playerList(room), shared: room.shared, missions: room.missions,
-        used: [...room.used], sky: room.skyT, era: room.era
+        used: [...room.used], sky: room.skyT, era: room.era, started: room.started
       });
       broadcast(room, { t:'joined', player: {
         id:me.id, name:me.name, color:me.color, x:me.x, z:me.z, yaw:me.yaw, dead:false
@@ -232,6 +245,13 @@ wss.on('connection', (ws) => {
       case 'respawn':
         me.dead = false;
         broadcast(room, { t:'respawn', id: me.id }, me.id);
+        break;
+
+      /* ---------- 탐험 시작 (방장만) ---------- */
+      case 'start':
+        if (!isHost || room.started) break;
+        room.started = true;
+        broadcast(room, { t:'start' });
         break;
 
       /* ---------- 시대 이동 (호스트만) ---------- */
