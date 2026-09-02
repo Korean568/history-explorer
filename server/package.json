@@ -1,0 +1,14 @@
+{
+  "name": "history-explorer-server",
+  "version": "1.0.0",
+  "description": "역사탐험대 : 선사시대 생존기 — 멀티플레이 서버",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,12 @@
+﻿# Render 블루프린트
+# GitHub 저장소를 Render 에 연결하면 이 파일만 보고 자동으로 배포됩니다.
+services:
+  - type: web
+    name: history-explorer
+    runtime: node
+    plan: free
+    rootDir: server            # 서버 코드 위치 (게임 파일은 상위 폴더에서 함께 서비스합니다)
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
