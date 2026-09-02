@@ -1463,7 +1463,7 @@ function bladeMesh(half, depth, color, emis){
 scene.add(camera);             // 카메라의 자식이 그려지도록 씬에 넣는다
 
 const ITEMS = [
-  { id:'tool', key:'1', ic:'🔨', nm:'뗀석기', range:4.0, kill:false,
+  { id:'tool', key:'1', ic:'🔨', nm:'뗀석기', range:10, kill:false,
     have:()=> (S.c.tool||0) >= 1,
     pos:[.47,-.46,-.86], rot:[-.24,.44,.42],
     make(){
@@ -1476,7 +1476,7 @@ const ITEMS = [
       chip.position.set(-.16,.02,.10); g.add(chip);
       g.scale.setScalar(.62); return g;
     } },
-  { id:'polish', key:'2', ic:'🪓', nm:'간석기', range:4.5, kill:false,
+  { id:'polish', key:'2', ic:'🪓', nm:'간석기', range:10, kill:false,
     have:()=> (S.c.polish||0) >= 1,
     pos:[.50,-.52,-.95], rot:[-.30,.48,.72],
     make(){
@@ -1491,7 +1491,7 @@ const ITEMS = [
       }
       g.scale.setScalar(.60); return g;
     } },
-  { id:'sword', key:'3', ic:'⚔️', nm:'비파형 동검', range:5.0, kill:true,
+  { id:'sword', key:'3', ic:'⚔️', nm:'비파형 동검', range:10, kill:true,
     have:()=> !!S.armed,
     pos:[.52,-.50,-1.00], rot:[-.34,.50,.88],
     make(){
@@ -4459,7 +4459,7 @@ function bronzeGame(){
       centerMsg('<h2>⚔️ 비파형 동검 완성!</h2><p>구리 + 주석 → 청동</p>'+
         '<p style="margin-top:8px">오른쪽 아래 <b>아이템창</b>'+(usingTouch?'':' 또는 <b>3</b> 키')+
         '을 눌러 검을 <b>들었다 내렸다</b> 할 수 있어요.<br>'+
-        '검을 든 채 <b>'+(usingTouch?'⚔️ 버튼':'클릭')+'</b>하면 거리 <b>5</b> 안의 멧돼지를 <b>물리칩니다!</b></p>',5200);
+        '검을 든 채 <b>'+(usingTouch?'⚔️ 버튼':'클릭')+'</b>하면 거리 <b>10</b> 안의 멧돼지를 <b>물리칩니다!</b></p>',5200);
       completeSilent('sword');
     };
   }
