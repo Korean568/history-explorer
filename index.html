@@ -398,7 +398,7 @@
       <p style="margin:0">👥 <b>여럿이 함께 탐험하기</b>를 누르면 열려 있는 방이 보여요.
         눌러서 바로 들어가거나, 새 방을 만들어 친구를 기다리세요.</p>
       <p style="margin:0">💡 달리기는 <b>누르고 있는 동안만</b> 작동해요.</p>
-      <p style="margin:0">🌙 <b>낮 2분 · 밤 30초</b>가 번갈아 찾아오고, 밤에는 <b>멧돼지</b>가 쫓아와요.</p>
+      <p style="margin:0">🌙 <b>낮 1분 30초 · 밤 2분</b>이 번갈아 찾아오고, 밤에는 <b>멧돼지</b>가 쫓아와요.</p>
       <p style="margin:0">🪓 낮에 <b>나무를 5그루</b> 베어 두면 밤에 <b>모닥불이 타올라</b> 안전합니다.
         새벽이 오면 멧돼지는 도망가요.</p>
       <p style="margin:0">⚠️ 마을에서 <b>너무 멀리</b> 가면 낮에도 멧돼지가 나타나요.
@@ -904,8 +904,8 @@ function pickFx(x,y,z,col){
 /* =========================================================
    1-B. 낮과 밤 (하루가 흐른다)
    ========================================================= */
-const DAY_SEC   = 120;               // 낮 2분
-const NIGHT_SEC  = 30;               // 밤 30초
+const DAY_SEC   = 90;                // 낮 1분 30초
+const NIGHT_SEC  = 120;              // 밤 2분
 const CYCLE      = DAY_SEC + NIGHT_SEC;
 const FADE_SEC   = 8;                // 해질녘 · 새벽에 걸리는 시간(초)
 const WOOD_NEED  = 5;                // 모닥불에 불을 피우려면 벌목해야 하는 나무 수
@@ -914,7 +914,7 @@ const FAR_CHANCE = 0.25;             // 그때 멧돼지가 나타날 확률
 const FAR_EVERY  = 15;               // 먼 곳에 머무는 동안 몇 초마다 판정하는가
 const FIRE_SAFE  = 12;               // 타오르는 모닥불 둘레 : 멧돼지가 들어오지 못하는 거리
 const Sky = {
-  t: 0,           // 하루 안에서 흐른 시간(초) : 0~120 낮 · 120~150 밤
+  t: 0,           // 하루 안에서 흐른 시간(초) : 0~90 낮 · 90~210 밤
   p: 0,           // 0~1 로 나타낸 하루의 진행도 (시계 막대기용)
   night: 0,       // 0(환한 낮) ~ 1(깊은 밤)
   isNight: false, // 멧돼지가 돌아다니는 시간인지
@@ -969,9 +969,9 @@ function updateSky(dt){
   if(!paused) Sky.t = (Sky.t + dt) % CYCLE;
   const t = Sky.t;
 
-  /* 낮(90초) → 해질녘 → 밤(90초) → 새벽 → 낮 ... */
-  const dEnd = DAY_SEC - FADE_SEC;      // 78초 : 해가 기울기 시작
-  const nEnd = CYCLE   - FADE_SEC;      // 168초 : 동이 트기 시작
+  /* 낮 → 해질녘 → 밤 → 새벽 → 낮 ... */
+  const dEnd = DAY_SEC - FADE_SEC;      // 82초 : 해가 기울기 시작
+  const nEnd = CYCLE   - FADE_SEC;      // 202초 : 동이 트기 시작
   let raw, dusk;
   if(t < dEnd)          { raw=0;   dusk=0; }
   else if(t < DAY_SEC)  { const k=(t-dEnd)/FADE_SEC; raw=k;   dusk=Math.sin(k*Math.PI); }
@@ -980,8 +980,16 @@ function updateSky(dt){
   Sky.night = raw*raw*(3-2*raw);        // 부드럽게 이어지도록
   Sky.p = t/CYCLE;
 
-  const p    = (t + FADE_SEC/2) / CYCLE;              // 해·달의 위치
-  const elev = Math.sin(p*TAU);                       // 해의 높이 : -1(한밤) ~ 1(한낮)
+  /* 해·달의 위치 — 낮과 밤 길이가 달라도 해가 지평선에 맞춰 뜨고 지도록
+     낮 구간에서 0→π, 밤 구간에서 π→2π 로 나누어 각도를 계산한다 */
+  const dMid = DAY_SEC - FADE_SEC/2;    // 해가 서쪽 지평선에 닿는 순간
+  const nMid = CYCLE   - FADE_SEC/2;    // 해가 동쪽 지평선에 다시 오는 순간
+  const dSt  = nMid - CYCLE;            // 낮 구간의 시작(음수)
+  let ang;
+  if(t < dMid)      ang = (t - dSt) / (dMid - dSt) * Math.PI;
+  else if(t < nMid) ang = Math.PI + (t - dMid) / (nMid - dMid) * Math.PI;
+  else              ang = (t - nMid) / (CYCLE - nMid + dMid) * Math.PI;
+  const elev = Math.sin(ang);                         // 해의 높이 : -1(한밤) ~ 1(한낮)
 
   /* ---- 하늘 · 안개 ---- */
   _sc.copy(eraSky).lerp(NIGHT_SKY, Sky.night).lerp(DUSK_SKY, dusk*0.55);
@@ -1000,7 +1008,6 @@ function updateSky(dt){
   sun.intensity = 0.85*(1-Sky.night) + 0.26*Sky.night;
   sun.color.copy(DAY_LIGHT).lerp(DUSK_LIGHT, dusk*0.8).lerp(MOON_LIGHT, Sky.night);
 
-  const ang = p*TAU;
   const vx = Math.cos(ang)*0.78, vy = Math.sin(ang), vz = 0.42;
   const L  = Math.hypot(vx,vy,vz) || 1;
   const ux=vx/L, uy=vy/L, uz=vz/L;

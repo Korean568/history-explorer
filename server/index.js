@@ -110,7 +110,7 @@ const server = http.createServer((req, res) => {
 /* ---------------------------------------------------------
    방 관리
    --------------------------------------------------------- */
-const CYCLE = 150;                 // 하루 = 낮 120초 + 밤 30초 (클라이언트와 같아야 합니다)
+const CYCLE = 210;                 // 하루 = 낮 90초 + 밤 120초 (클라이언트와 같아야 합니다)
 const SHARED_KEYS = ['wood','stick','hide','seed','clay','grass','grain',
                      'copper','tin','pillar','cap'];
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // 헷갈리는 0·O·1·I 제외
