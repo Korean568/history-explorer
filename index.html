@@ -386,8 +386,12 @@
         <ul id="mpList"></ul>
       </div>
       <details id="mpAdv">
-        <summary>⚙️ 서버 주소 설정</summary>
-        <input id="mpUrl" placeholder="wss://내서버.onrender.com/ws" autocomplete="off">
+        <summary>⚙️ 서버 주소 설정 (보통은 건드리지 않아도 됩니다)</summary>
+        <p style="font-size:12px;color:#8a7864;margin:6px 0 0;line-height:1.6">
+          ⚠️ 여기는 <b>방 코드를 넣는 곳이 아닙니다.</b> 방 코드는 위쪽 칸에 넣어 주세요.<br>
+          비워 두면 지금 접속한 주소로 자동 연결됩니다.</p>
+        <input id="mpUrl" placeholder="비워 두세요 (예: wss://내서버.onrender.com/ws)" autocomplete="off">
+        <button class="mini" id="mpUrlClear" style="margin-top:6px;width:100%;background:#8b8378;border-bottom-color:#5d574f">주소 비우기 (자동 연결)</button>
       </details>
     </div>
 
@@ -1635,11 +1639,20 @@ const Net = {
   skyOffset:0,
 
   url(){
-    const q = new URLSearchParams(location.search).get('server');
-    if(q) return q;
-    const saved = (localStorage.getItem('histServer')||'').trim();
-    if(saved) return saved;
-    return (location.protocol==='https:'?'wss://':'ws://') + location.host + '/ws';
+    /* 주소처럼 생기지 않은 값(예: 방 코드)은 무시하고 자동 주소를 쓴다 */
+    const clean = (v)=>{
+      v = (v||'').trim().replace(/\/+$/,'');
+      if(!v) return '';
+      if(/^wss?:\/\//i.test(v)) return v;
+      if(/^https?:\/\//i.test(v)) return v.replace(/^http/i,'ws') + (/\/ws$/.test(v)?'':'/ws');
+      const host = /^(localhost|(\[[^\]]+\])|([\w-]+\.)+[\w-]+)(:\d+)?(\/.*)?$/i;
+      if(host.test(v))
+        return (location.protocol==='https:'?'wss://':'ws://') + v + (/\/ws$/.test(v)?'':'/ws');
+      return '';                       // 방 코드 같은 값은 버린다
+    };
+    return clean(new URLSearchParams(location.search).get('server'))
+        || clean(localStorage.getItem('histServer'))
+        || (location.protocol==='https:'?'wss://':'ws://') + location.host + '/ws';
   },
 
   connect(create, code, name, done){
@@ -5080,6 +5093,10 @@ function mpMsg(t, cls){ const e=$('#mpMsg'); e.textContent=t||''; e.className=cl
       Net.drawParty();
     });
   }
+  $('#mpUrlClear').addEventListener('click', ()=>{
+    urlEl.value=''; localStorage.removeItem('histServer');
+    mpMsg('✅ 서버 주소를 비웠어요. 이제 자동으로 연결됩니다.','ok');
+  });
   $('#mpCreate').addEventListener('click', ()=>go(true));
   $('#mpJoin').addEventListener('click',   ()=>go(false));
   codeEl.addEventListener('keydown', e=>{ if(e.key==='Enter') go(false); });
