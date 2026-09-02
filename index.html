@@ -431,7 +431,7 @@
     <div id="adm" style="display:none">
       <h3>🔧 관리자 모드 (수업 준비용)</h3>
       <div class="admrow">
-        <input id="admpw" type="password" inputmode="numeric" autocomplete="off" placeholder="비밀번호 4자리">
+        <input id="admpw" type="password" autocomplete="off" placeholder="비밀번호">
         <button class="mini" id="admOk">확인</button>
       </div>
       <p id="admMsg"></p>
@@ -5219,7 +5219,23 @@ function mpStartBtn(){
 
 /* ---------- 관리자 모드 : 시대 바로 이동 ---------- */
 (function admin(){
-  const ADM_PW='9876';
+  /* 비밀번호는 코드에 남기지 않고 해시값만 둔다 (소스 보기로 읽히지 않게).
+     ⚠️ 브라우저에서 돌아가는 검사라 개발자도구를 쓰면 우회할 수 있습니다.
+        수업 중 실수로 누르는 것을 막는 용도입니다. */
+  const ADM_HASH='d1f1274698f13f0a930d4aa411452c6a';
+  function admHash(str){
+    let h1=0x811c9dc5,h2=0x01000193,h3=0xdeadbeef,h4=0x9e3779b9;
+    for(let i=0;i<str.length;i++){
+      const c=str.charCodeAt(i);
+      h1=Math.imul(h1^c,16777619);
+      h2=Math.imul(h2+c+i,2246822519)^(h1>>>7);
+      h3=Math.imul(h3^(c*(i+3)),3266489917)^(h2>>>11);
+      h4=Math.imul(h4+(c<<(i%13)),668265263)^(h3>>>5);
+    }
+    const f=x=>(x>>>0).toString(16).padStart(8,'0');
+    return f(h1)+f(h2)+f(h3)+f(h4);
+  }
+  let tries=0, lockUntil=0;
   const box=document.getElementById('adm'), btn=document.getElementById('admBtn'),
         pw=document.getElementById('admpw'), ok=document.getElementById('admOk'),
         list=document.getElementById('admList'), note=document.getElementById('admMsg');
@@ -5232,15 +5248,23 @@ function mpStartBtn(){
   });
 
   function tryUnlock(){
-    if(pw.value.trim()===ADM_PW){
-      unlocked=true;
+    if(Date.now() < lockUntil){
+      note.style.color='#c0392b';
+      note.textContent=`너무 여러 번 틀렸어요. ${Math.ceil((lockUntil-Date.now())/1000)}초 뒤에 다시 시도하세요.`;
+      return;
+    }
+    if(admHash(pw.value.trim())===ADM_HASH){
+      unlocked=true; tries=0;
       list.style.display='grid';
       pw.parentElement.style.display='none';
       note.style.color='#4e7a3a';
       note.textContent='잠금 해제됨 · 시작할 시대를 고르세요.';
     } else {
+      tries++;
       note.style.color='#c0392b';
-      note.textContent='비밀번호가 올바르지 않습니다.';
+      if(tries>=5){ lockUntil = Date.now()+30000; tries=0;
+        note.textContent='너무 여러 번 틀렸어요. 30초 뒤에 다시 시도하세요.'; }
+      else note.textContent=`비밀번호가 올바르지 않습니다. (${tries}/5)`;
       pw.value=''; pw.focus();
     }
   }
