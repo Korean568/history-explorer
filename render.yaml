@@ -1,17 +1,20 @@
 ﻿# Render 블루프린트
 # GitHub 저장소를 Render 에 연결하면 이 파일만 보고 자동으로 배포됩니다.
+#
+# ※ rootDir 를 server 로 두면 index.html(루트) 만 고쳤을 때
+#    Render 가 "바뀐 게 없다"고 판단해 자동 배포를 건너뜁니다.
+#    그래서 저장소 전체를 대상으로 두고, 명령에서 server 폴더로 들어갑니다.
 services:
   - type: web
     name: history-explorer
     runtime: node
     plan: free
-    rootDir: server            # 서버 코드 위치 (게임 파일은 상위 폴더에서 함께 서비스합니다)
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm start
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      # 관리자로 쓸 닉네임 (이 닉네임으로 가입한 계정만 관리자 모드를 볼 수 있습니다)
+      # 관리자로 쓸 아이디 (이 아이디로 가입한 계정만 관리자 모드를 볼 수 있습니다)
       - key: ADMIN_USER
         sync: false
       # Neon 접속 주소 (없으면 계정이 파일에 저장되어 재배포 때 사라집니다)
