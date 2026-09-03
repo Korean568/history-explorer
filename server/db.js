@@ -68,6 +68,10 @@ function makePg(){
     async setNick(uname, nick){
       await pool.query('UPDATE users SET nick=$2 WHERE uname=$1', [uname, nick]);
     },
+    async deleteUser(uname){
+      const r = await pool.query('DELETE FROM users WHERE uname=$1', [uname]);
+      return r.rowCount > 0;
+    },
     async touchLogin(uname){
       await pool.query('UPDATE users SET last_login=now() WHERE uname=$1', [uname]);
     },
@@ -122,6 +126,10 @@ function makeFile(){
     },
     async setNick(uname, nick){
       if (data.users[uname]) { data.users[uname].nick = nick; save(); }
+    },
+    async deleteUser(uname){
+      if (!data.users[uname]) return false;
+      delete data.users[uname]; save(); return true;
     },
     async touchLogin(uname){
       if (data.users[uname]) { data.users[uname].last_login = new Date().toISOString(); save(); }

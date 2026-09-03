@@ -374,6 +374,30 @@ setInterval(() => {
   catch (e) { console.error('저장소 준비 실패:', e.message); }
   console.log(`계정 저장 방식 : ${db.kind}` +
     (auth.ADMIN_USER ? ` · 관리자 아이디 : ${auth.ADMIN_USER}` : ' · 관리자 : 첫 가입자'));
+
+  /* ---------- 계정 지우기 ----------
+     환경 변수 RESET_USER 에 아이디를 적어 두면 서버가 시작할 때 그 계정을 지웁니다.
+     (비밀번호를 잊었을 때 쓰는 비상 수단입니다)
+     같은 값으로는 한 번만 실행되므로, 지우고 나서 환경 변수를 남겨 둬도
+     다음 배포 때 또 지워지지는 않습니다.
+     같은 아이디를 다시 지우려면 값을 조금 바꿔 주세요 (예: admin → admin,admin). */
+  try {
+    const want = (process.env.RESET_USER || '').trim();
+    if (want) {
+      const done = await db.getConfig('reset_done');
+      if (done === want) {
+        console.log('· RESET_USER : 이미 처리한 값이라 건너뜁니다.');
+      } else {
+        for (const id of want.split(',').map(v => v.trim().toLowerCase()).filter(Boolean)) {
+          const gone = await db.deleteUser(id);
+          console.log(gone ? `🗑️  계정을 지웠습니다 : ${id}`
+                           : `·  그런 계정이 없습니다 : ${id}`);
+        }
+        await db.setConfig('reset_done', want);
+        console.log('⚠️  다 되었으면 Render 에서 RESET_USER 환경 변수를 지워 주세요.');
+      }
+    }
+  } catch (e) { console.error('계정 삭제 중 문제:', e.message); }
 })();
 
 server.listen(PORT, () => {
