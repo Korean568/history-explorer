@@ -109,6 +109,12 @@
   #acctWho b{color:var(--clay);}
   #acctWho .badge{font-size:10.5px;background:var(--sun);border-radius:6px;padding:1px 6px;margin-left:5px;}
   #mpAuth .mprow{margin-bottom:7px;}
+  .autabs{display:flex;gap:6px;margin-bottom:9px;}
+  .autab{flex:1;padding:9px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;
+    border:2.5px solid #e3d5bb;border-radius:11px;background:#f7f0e0;color:#8a7864;}
+  .autab.on{background:var(--clay);border-color:var(--clay);color:#fff;}
+  #acctWho .uid{font-size:11px;color:#8a7864;font-weight:700;margin-left:4px;}
+  #acct .btns{display:flex;gap:6px;flex:0 0 auto;}
   #auMsg{margin:6px 0 0;font-size:12.5px;font-weight:700;min-height:16px;color:#7a6653;}
   #auMsg.err{color:#c0392b;} #auMsg.ok{color:var(--moss);}
   .authnote{font-size:11.5px;color:#8a7864;line-height:1.5;margin:0 0 8px;}
@@ -367,7 +373,13 @@
 <!-- 시작 화면 -->
 <div id="start">
   <div class="card">
-    <div id="acct"><span id="acctWho"></span><button class="mini2" id="acctOut">로그아웃</button></div>
+    <div id="acct">
+      <span id="acctWho"></span>
+      <span class="btns">
+        <button class="mini2" id="acctNick">닉네임 변경</button>
+        <button class="mini2" id="acctOut">로그아웃</button>
+      </span>
+    </div>
     <h1>🏕️ 역사탐험대<br>선사시대 생존기</h1>
     <p class="sub">시간 여행을 통해 <b>구석기 → 신석기 → 청동기</b> 시대를 탐험하세요!<br>
       롭이 알려 주는 <b>순서</b>를 모두 마치면 다음 시대로 이동합니다.</p>
@@ -418,14 +430,16 @@
       <h3>👥 함께 탐험하기</h3>
 
       <div id="mpAuth">
-        <p class="authnote">함께 탐험하려면 <b>닉네임</b>이 필요해요.
-          처음이라면 <b>회원가입</b>을, 이미 만들었다면 <b>로그인</b>을 눌러 주세요.</p>
-        <div class="mprow"><input id="auName" placeholder="닉네임 (2~12자)" maxlength="12" autocomplete="username"></div>
-        <div class="mprow"><input id="auPw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password"></div>
-        <div class="mprow">
-          <button class="mini" id="auLogin" style="flex:1">로그인</button>
-          <button class="mini" id="auSignup" style="flex:1;background:var(--moss);border-bottom-color:#33521f">회원가입</button>
+        <div class="autabs">
+          <button class="autab on" id="auTabLogin">로그인</button>
+          <button class="autab" id="auTabSignup">회원가입</button>
         </div>
+        <p class="authnote" id="auNote">아이디와 비밀번호를 넣어 주세요.</p>
+        <div class="mprow"><input id="auId" placeholder="아이디 (영문·숫자 3~16자)" maxlength="16" autocomplete="username"></div>
+        <div class="mprow" id="auNickRow" style="display:none">
+          <input id="auNick" placeholder="닉네임 (한글 가능, 2~12자)" maxlength="12"></div>
+        <div class="mprow"><input id="auPw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password"></div>
+        <button class="mini" id="auGo" style="width:100%">로그인</button>
         <p id="auMsg"></p>
       </div>
 
@@ -5150,7 +5164,7 @@ $('#go').addEventListener('click',()=>beginGame(0));
    ========================================================= */
 const Me = {
   token: localStorage.getItem('histToken') || null,
-  name: null, admin: false,
+  id: null, nick: null, admin: false,
 
   async api(path, body){
     const opt = { method: body ? 'POST' : 'GET', headers:{} };
@@ -5165,22 +5179,23 @@ const Me = {
 
   set(j){
     this.token = j.token || this.token;
-    this.name = j.name; this.admin = !!j.admin;
+    this.id = j.id; this.nick = j.nick; this.admin = !!j.admin;
     if(j.token) localStorage.setItem('histToken', j.token);
+    if(j.id) localStorage.setItem('histId', j.id);
     this.draw();
   },
   clear(){
-    this.token = null; this.name = null; this.admin = false;
+    this.token = null; this.id = null; this.nick = null; this.admin = false;
     localStorage.removeItem('histToken');
     this.draw();
   },
-  get on(){ return !!this.name; },
+  get on(){ return !!this.nick; },
 
   draw(){
     const box = $('#acct'), who = $('#acctWho'), admBtn = $('#admBtn');
     if(this.on){
       box.style.display = 'flex';
-      who.innerHTML = `👤 <b>${this.name}</b> 님` +
+      who.innerHTML = `👤 <b>${this.nick}</b> 님<span class="uid">@${this.id}</span>` +
         (this.admin ? '<span class="badge">관리자</span>' : '');
     } else box.style.display = 'none';
     if(admBtn) admBtn.style.display = this.admin ? 'block' : 'none';
@@ -5227,25 +5242,55 @@ function mpStartBtn(){
 
   /* ---------- 로그인 · 회원가입 ---------- */
   const auMsg = (t,c)=>{ const e=$('#auMsg'); e.textContent=t||''; e.className=c||''; };
-  async function auth(path){
-    const name = ($('#auName').value||'').trim();
-    const pw   = $('#auPw').value||'';
-    if(!name){ auMsg('닉네임을 입력해 주세요.','err'); return; }
-    if(!pw){   auMsg('비밀번호를 입력해 주세요.','err'); return; }
+  let authMode = 'login';
+  $('#auId').value = localStorage.getItem('histId') || '';
+
+  function setMode(m){
+    authMode = m;
+    $('#auTabLogin').classList.toggle('on',  m==='login');
+    $('#auTabSignup').classList.toggle('on', m==='signup');
+    $('#auNickRow').style.display = (m==='signup') ? 'flex' : 'none';
+    $('#auGo').textContent = (m==='signup') ? '회원가입' : '로그인';
+    $('#auGo').style.background = (m==='signup') ? 'var(--moss)' : '';
+    $('#auGo').style.borderBottomColor = (m==='signup') ? '#33521f' : '';
+    $('#auNote').innerHTML = (m==='signup')
+      ? '<b>아이디</b>는 로그인할 때 쓰고, <b>닉네임</b>은 게임에서 친구에게 보이는 이름이에요.'
+      : '아이디와 비밀번호를 넣어 주세요.';
+    auMsg('');
+  }
+  async function doAuth(){
+    const id = ($('#auId').value||'').trim();
+    const pw = $('#auPw').value||'';
+    if(!id){ auMsg('아이디를 입력해 주세요.','err'); return; }
+    if(authMode==='signup' && !($('#auNick').value||'').trim()){
+      auMsg('닉네임을 입력해 주세요.','err'); return; }
+    if(!pw){ auMsg('비밀번호를 입력해 주세요.','err'); return; }
     auMsg('확인하는 중…');
     try{
-      Me.set(await Me.api(path, {name, pw}));
+      const body = authMode==='signup'
+        ? { id, nick:($('#auNick').value||'').trim(), pw }
+        : { id, pw };
+      Me.set(await Me.api('/api/'+(authMode==='signup'?'signup':'login'), body));
       $('#auPw').value = '';
       auMsg('');
       refreshRooms();
     }catch(e){ auMsg(e.message, 'err'); }
   }
-  $('#auLogin').addEventListener('click', ()=>auth('/api/login'));
-  $('#auSignup').addEventListener('click', ()=>auth('/api/signup'));
-  $('#auPw').addEventListener('keydown', e=>{ if(e.key==='Enter') auth('/api/login'); });
+  $('#auTabLogin').addEventListener('click',  ()=>setMode('login'));
+  $('#auTabSignup').addEventListener('click', ()=>setMode('signup'));
+  $('#auGo').addEventListener('click', doAuth);
+  for(const id of ['#auId','#auNick','#auPw'])
+    $(id).addEventListener('keydown', e=>{ if(e.key==='Enter') doAuth(); });
+
   $('#acctOut').addEventListener('click', ()=>{
     Net.leave(); Me.clear(); auMsg('로그아웃했어요.','ok');
     $('#mpRoom').style.display='none'; $('#mpRefresh').style.display='';
+  });
+  $('#acctNick').addEventListener('click', async ()=>{
+    const v = prompt('새 닉네임을 입력해 주세요 (한글 가능, 2~12자)', Me.nick);
+    if(v===null) return;
+    try{ Me.set(await Me.api('/api/nick', {nick:v})); auMsg('닉네임을 바꿨어요.','ok'); }
+    catch(e){ auMsg(e.message,'err'); }
   });
 
   /* 열려 있는 방 목록 */
@@ -5278,7 +5323,7 @@ function mpStartBtn(){
   function enter(create, code){
     if(!Me.on){ auMsg('먼저 로그인해 주세요.','err'); return; }
     mpMsg('연결하는 중…');
-    Net.connect(create, code, Me.name, (err, m)=>{
+    Net.connect(create, code, Me.nick, (err, m)=>{
       if(err){ mpMsg(err,'err'); return; }
       mpMsg('✅ 방에 들어왔어요!','ok');
       $('#mpRoom').style.display='block';
@@ -5338,7 +5383,7 @@ function mpStartBtn(){
     const open = box.style.display==='none';
     box.style.display = open ? 'block' : 'none';
     note.style.color='#4e7a3a';
-    note.textContent = `${Me.name} 님 · 시작할 시대를 고르세요.`;
+    note.textContent = `${Me.nick} 님 · 시작할 시대를 고르세요.`;
   });
 
   list.addEventListener('click',e=>{

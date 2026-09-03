@@ -9,7 +9,7 @@
 const crypto = require('crypto');
 const db     = require('./db');
 
-/* 관리자로 지정할 닉네임 (Render 환경 변수 ADMIN_USER 로 지정) */
+/* 관리자로 지정할 아이디 (Render 환경 변수 ADMIN_USER 로 지정) */
 const ADMIN_USER = (process.env.ADMIN_USER || '').trim().toLowerCase();
 
 const TOKEN_DAYS = 60;
@@ -62,11 +62,17 @@ function verify(token){
 /* ---------------------------------------------------------
    이름 · 비밀번호 규칙
    --------------------------------------------------------- */
-const NAME_RE = /^[0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ_-]{2,12}$/;
-function checkName(n){
-  n = String(n || '').trim();
-  if (!NAME_RE.test(n)) return { err: '닉네임은 한글·영문·숫자 2~12자로 지어 주세요.' };
-  return { ok: n };
+const ID_RE   = /^[A-Za-z0-9_]{3,16}$/;                     // 아이디 : 영문·숫자
+const NICK_RE = /^[0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ ._-]{2,12}$/;     // 닉네임 : 한글도 가능
+function checkId(v){
+  v = String(v || '').trim();
+  if (!ID_RE.test(v)) return { err: '아이디는 영문·숫자·밑줄 3~16자로 지어 주세요.' };
+  return { ok: v };
+}
+function checkNick(v){
+  v = String(v || '').trim().replace(/\s+/g,' ');
+  if (!NICK_RE.test(v)) return { err: '닉네임은 한글·영문·숫자 2~12자로 지어 주세요.' };
+  return { ok: v };
 }
 function checkPw(p){
   p = String(p || '');
@@ -94,31 +100,32 @@ setInterval(() => {
 /* ---------------------------------------------------------
    기능
    --------------------------------------------------------- */
-async function signup(name, pw, ip){
+async function signup(id, nick, pw, ip){
   if (tooMany(ip)) return { err: '잠시 후 다시 시도해 주세요.' };
-  const n = checkName(name); if (n.err) return n;
+  const i = checkId(id);     if (i.err) return i;
+  const n = checkNick(nick); if (n.err) return n;
   const p = checkPw(pw);     if (p.err) return p;
 
-  const uname = n.ok.toLowerCase();
-  if (await db.getUser(uname)) return { err: '이미 쓰고 있는 닉네임이에요.' };
+  const uname = i.ok.toLowerCase();
+  if (await db.getUser(uname)) return { err: '이미 쓰고 있는 아이디예요.' };
 
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = await hashPw(p.ok, salt);
-  /* 관리자 지정 : ADMIN_USER 와 같은 닉네임, 또는 (지정이 없다면) 첫 번째 가입자 */
+  /* 관리자 지정 : ADMIN_USER 와 같은 아이디, 또는 (지정이 없다면) 첫 번째 가입자 */
   const admin = ADMIN_USER ? (uname === ADMIN_USER) : ((await db.countUsers()) === 0);
 
-  const row = await db.createUser({ uname, disp: n.ok, hash, salt, admin });
+  const row = await db.createUser({ uname, disp: i.ok, nick: n.ok, hash, salt, admin });
   return session(row);
 }
 
-async function login(name, pw, ip){
+async function login(id, pw, ip){
   if (tooMany(ip)) return { err: '잠시 후 다시 시도해 주세요.' };
-  const uname = String(name || '').trim().toLowerCase();
+  const uname = String(id || '').trim().toLowerCase();
   const row = await db.getUser(uname);
-  if (!row) return { err: '닉네임 또는 비밀번호가 올바르지 않아요.' };
+  if (!row) return { err: '아이디 또는 비밀번호가 올바르지 않아요.' };
 
   const hash = await hashPw(String(pw || ''), row.pw_salt);
-  if (!sameHash(hash, row.pw_hash)) return { err: '닉네임 또는 비밀번호가 올바르지 않아요.' };
+  if (!sameHash(hash, row.pw_hash)) return { err: '아이디 또는 비밀번호가 올바르지 않아요.' };
 
   /* 관리자 지정이 나중에 바뀌었을 수도 있으니 맞춰 준다 */
   if (ADMIN_USER) {
@@ -131,18 +138,29 @@ async function login(name, pw, ip){
 
 function session(row){
   const admin = !!row.is_admin;
+  const nick  = row.nick || row.uname_disp;
   const token = sign({
-    u: row.uname, d: row.uname_disp, a: admin,
+    u: row.uname, d: row.uname_disp, n: nick, a: admin,
     e: Date.now() + TOKEN_DAYS * 86400000
   });
-  return { token, name: row.uname_disp, admin };
+  return { token, id: row.uname_disp, nick, admin };
+}
+
+/* 닉네임 바꾸기 */
+async function changeNick(token, nick){
+  const who = whoIs(token);
+  if (!who) return { err: '로그인이 필요해요.' };
+  const n = checkNick(nick); if (n.err) return n;
+  await db.setNick(who.uname, n.ok);
+  const row = await db.getUser(who.uname);
+  return session(row);
 }
 
 /* 토큰으로 사용자 확인 */
 function whoIs(token){
   const p = verify(token);
   if (!p) return null;
-  return { uname: p.u, name: p.d || p.u, admin: !!p.a };
+  return { uname: p.u, id: p.d || p.u, nick: p.n || p.d || p.u, admin: !!p.a };
 }
 
-module.exports = { initSecret, signup, login, whoIs, ADMIN_USER };
+module.exports = { initSecret, signup, login, changeNick, whoIs, ADMIN_USER };

@@ -32,14 +32,18 @@ function makePg(){
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id         SERIAL PRIMARY KEY,
-        uname      TEXT UNIQUE NOT NULL,
-        uname_disp TEXT NOT NULL,
+        uname      TEXT UNIQUE NOT NULL,   -- 아이디 (소문자)
+        uname_disp TEXT NOT NULL,          -- 아이디 (입력한 그대로)
+        nick       TEXT,                   -- 닉네임 (화면에 보이는 이름)
         pw_hash    TEXT NOT NULL,
         pw_salt    TEXT NOT NULL,
         is_admin   BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         last_login TIMESTAMPTZ
       )`);
+    /* 예전 버전에서 올라온 표에도 닉네임 칸을 더한다 */
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS nick TEXT`);
+    await pool.query(`UPDATE users SET nick = uname_disp WHERE nick IS NULL`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS config (
         k TEXT PRIMARY KEY,
@@ -56,10 +60,13 @@ function makePg(){
     },
     async createUser(u){
       const r = await pool.query(
-        `INSERT INTO users (uname, uname_disp, pw_hash, pw_salt, is_admin)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [u.uname, u.disp, u.hash, u.salt, !!u.admin]);
+        `INSERT INTO users (uname, uname_disp, nick, pw_hash, pw_salt, is_admin)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [u.uname, u.disp, u.nick, u.hash, u.salt, !!u.admin]);
       return r.rows[0];
+    },
+    async setNick(uname, nick){
+      await pool.query('UPDATE users SET nick=$2 WHERE uname=$1', [uname, nick]);
     },
     async touchLogin(uname){
       await pool.query('UPDATE users SET last_login=now() WHERE uname=$1', [uname]);
@@ -109,9 +116,12 @@ function makeFile(){
     async init(){ load(); },
     async getUser(uname){ return data.users[uname] || null; },
     async createUser(u){
-      const row = { uname:u.uname, uname_disp:u.disp, pw_hash:u.hash,
+      const row = { uname:u.uname, uname_disp:u.disp, nick:u.nick, pw_hash:u.hash,
                     pw_salt:u.salt, is_admin:!!u.admin, created_at:new Date().toISOString() };
       data.users[u.uname] = row; save(); return row;
+    },
+    async setNick(uname, nick){
+      if (data.users[uname]) { data.users[uname].nick = nick; save(); }
     },
     async touchLogin(uname){
       if (data.users[uname]) { data.users[uname].last_login = new Date().toISOString(); save(); }

@@ -65,22 +65,25 @@ const server = http.createServer((req, res) => {
     const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
              || req.socket.remoteAddress || '?';
 
+    const bearer = () => (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
     if (url === '/api/me') {
-      const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      const who = auth.whoIs(tok);
-      return who ? done(200, { name: who.name, admin: who.admin })
+      const who = auth.whoIs(bearer());
+      return who ? done(200, { id: who.id, nick: who.nick, admin: who.admin })
                  : done(401, { err: '로그인이 필요해요.' });
     }
 
-    if ((url === '/api/signup' || url === '/api/login') && req.method === 'POST') {
+    if ((url === '/api/signup' || url === '/api/login' || url === '/api/nick')
+        && req.method === 'POST') {
       let body = '';
       req.on('data', c => { body += c; if (body.length > 4096) req.destroy(); });
       req.on('end', async () => {
         let b; try { b = JSON.parse(body || '{}'); } catch (e) { return done(400, { err:'잘못된 요청' }); }
         try {
-          const r = url === '/api/signup'
-            ? await auth.signup(b.name, b.pw, ip)
-            : await auth.login(b.name, b.pw, ip);
+          let r;
+          if (url === '/api/signup')     r = await auth.signup(b.id, b.nick, b.pw, ip);
+          else if (url === '/api/login') r = await auth.login(b.id, b.pw, ip);
+          else                           r = await auth.changeNick(bearer(), b.nick);
           return r.err ? done(400, r) : done(200, r);
         } catch (e) {
           console.error(e);
@@ -194,7 +197,7 @@ wss.on('connection', (ws) => {
       if (me) return;
       const who = auth.whoIs(m.token);
       if (!who) return send(ws, { t:'error', msg:'로그인이 필요해요. 먼저 로그인해 주세요.' });
-      const name = who.name;
+      const name = who.nick;
       let code = String(m.room || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 
       if (m.create || !code) { code = newCode(); room = makeRoom(code); }
