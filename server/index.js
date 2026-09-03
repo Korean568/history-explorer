@@ -68,9 +68,10 @@ const server = http.createServer((req, res) => {
     const bearer = () => (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
     if (url === '/api/me') {
-      const who = auth.whoIs(bearer());
-      return who ? done(200, { id: who.id, nick: who.nick, admin: who.admin })
-                 : done(401, { err: '로그인이 필요해요.' });
+      auth.me(bearer())
+        .then(r => r ? done(200, r) : done(401, { err: '로그인이 필요해요.' }))
+        .catch(e => { console.error(e); done(500, { err: '서버에 문제가 생겼어요.' }); });
+      return;
     }
 
     if ((url === '/api/signup' || url === '/api/login' || url === '/api/nick')
@@ -372,7 +373,7 @@ setInterval(() => {
   try { await db.init(); await auth.initSecret(); }
   catch (e) { console.error('저장소 준비 실패:', e.message); }
   console.log(`계정 저장 방식 : ${db.kind}` +
-    (auth.ADMIN_USER ? ` · 관리자 닉네임 : ${auth.ADMIN_USER}` : ' · 관리자 : 첫 가입자'));
+    (auth.ADMIN_USER ? ` · 관리자 아이디 : ${auth.ADMIN_USER}` : ' · 관리자 : 첫 가입자'));
 })();
 
 server.listen(PORT, () => {

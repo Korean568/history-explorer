@@ -146,6 +146,20 @@ function session(row){
   return { token, id: row.uname_disp, nick, admin };
 }
 
+/* 지금 로그인 상태를 저장소에서 다시 확인한다.
+   (관리자 지정이 나중에 바뀌어도 다시 로그인할 필요가 없도록) */
+async function me(token){
+  const who = whoIs(token);
+  if (!who) return null;
+  const row = await db.getUser(who.uname);
+  if (!row) return null;
+  if (ADMIN_USER) {
+    const should = (who.uname === ADMIN_USER);
+    if (!!row.is_admin !== should) { await db.setAdmin(who.uname, should); row.is_admin = should; }
+  }
+  return session(row);                 // 새 토큰도 함께 내려 준다
+}
+
 /* 닉네임 바꾸기 */
 async function changeNick(token, nick){
   const who = whoIs(token);
@@ -163,4 +177,4 @@ function whoIs(token){
   return { uname: p.u, id: p.d || p.u, nick: p.n || p.d || p.u, admin: !!p.a };
 }
 
-module.exports = { initSecret, signup, login, changeNick, whoIs, ADMIN_USER };
+module.exports = { initSecret, signup, login, me, changeNick, whoIs, ADMIN_USER };
