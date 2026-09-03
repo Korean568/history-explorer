@@ -332,6 +332,14 @@ wss.on('connection', (ws) => {
         broadcast(room, { t:'sky', t: room.skyT }, me.id);
         break;
 
+      /* ---------- 채팅 ---------- */
+      case 'chat': {
+        const msg = String(m.msg || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (!msg) break;
+        broadcast(room, { t:'chat', from: me.name, msg }, me.id);
+        break;
+      }
+
       /* ---------- 알림 ---------- */
       case 'toast':
         broadcast(room, { t:'toast', msg: String(m.msg || '').slice(0, 80) }, me.id);

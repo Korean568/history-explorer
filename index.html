@@ -312,6 +312,34 @@
   .steps b.on{background:var(--clay)}
   #kmsg{min-height:44px;}
 
+  /* ---------- 채팅 (멀티플레이) ---------- */
+  #chat{position:absolute;left:14px;top:calc(58px + env(safe-area-inset-top));
+    width:min(290px,44vw);display:none;pointer-events:auto;}
+  #chatLog{display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+    margin-bottom:5px;min-height:0;}
+  #chatLog .m{background:rgba(255,255,255,.88);border:2px solid var(--bark);border-radius:10px;
+    padding:3px 9px;font-size:12.5px;font-weight:700;color:var(--ink);
+    max-width:100%;word-break:break-word;animation:cin .25s;}
+  #chatLog .m b{color:var(--clay);}
+  #chatLog .m.me{background:#fff3d6;}
+  #chatLog .m.sys{background:rgba(43,33,24,.82);color:#fff;border-color:#8a7864;font-weight:800;}
+  @keyframes cin{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+  #chatBar{display:flex;gap:5px;}
+  #chatIn{flex:1;min-width:0;padding:6px 10px;font-size:12.5px;font-family:inherit;color:var(--ink);
+    border:2.5px solid var(--bark);border-radius:10px;background:rgba(255,255,255,.9);}
+  #chatIn:focus{outline:none;border-color:var(--clay);background:#fff;}
+  #chatSend{flex:0 0 auto;padding:6px 11px;font-size:12px;font-weight:800;font-family:inherit;
+    color:#fff;background:var(--clay);border:none;border-bottom:3px solid #8f4a20;
+    border-radius:10px;cursor:pointer;}
+  #chatSend:active{transform:translateY(2px);border-bottom-width:1px;}
+  /* 채팅이 켜지면 자원 칩을 아래로 내린다 */
+  #hud.mp #stats{top:calc(246px + env(safe-area-inset-top));}
+  @media (max-width:620px){
+    #chat{width:min(210px,46vw);}
+    #chatLog .m{font-size:11px;padding:2px 7px;}
+    #hud.mp #stats{top:calc(196px + env(safe-area-inset-top));}
+  }
+
   /* ---------- AI 가이드 ---------- */
   #guide{position:absolute;left:14px;bottom:calc(14px + env(safe-area-inset-bottom));
     display:none;align-items:center;gap:10px;width:min(400px,62vw);
@@ -407,6 +435,7 @@
         <p>클릭 또는 E — 상호작용</p>
         <p><b>F — 식량 먹기</b> · <b>1·2·3 — 도구 들기/내리기</b></p>
         <p>도구를 든 채 <b>클릭 — 공격</b></p>
+        <p><b>Enter — 채팅</b> (함께 탐험할 때)</p>
       </section>
       <section>
         <h3>📱 태블릿</h3>
@@ -513,6 +542,13 @@
     <div id="gNav"><i id="gArrow"></i><span id="gDist">—</span></div>
   </div>
   <div id="party"></div>
+  <div id="chat">
+    <div id="chatLog"></div>
+    <div id="chatBar">
+      <input id="chatIn" maxlength="80" placeholder="Enter — 친구에게 말하기" autocomplete="off">
+      <button id="chatSend">보내기</button>
+    </div>
+  </div>
   <div id="crosshair"></div>
   <div id="joy"><i></i></div>
   <button id="runBtn">🏃<span>달리기</span></button>
@@ -560,7 +596,8 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elGuide=$('#guide'), elGMsg=$('#gMsg'), elGArrow=$('#gArrow'),
       elGDist=$('#gDist'), elGNav=$('#gNav'), elGAvatar=$('#gAvatar'),
       elHunger=$('#hungerWrap'), elHungerBar=$('#hungerBar'), elHungerTxt=$('#hungerTxt'),
-      elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party');
+      elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party'),
+      elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn');
 
 const elCenter=document.getElementById('center'), elFade=document.getElementById('fade');
 let centerTimer=null;
@@ -1728,6 +1765,39 @@ function nameTag(text){
   return sp;
 }
 
+/* ---------- 채팅 ---------- */
+const escHtml = (t)=> String(t).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const Chat = {
+  MAX: 7,               // 화면에 남겨 두는 줄 수
+  LIFE: 40000,          // 이 시간이 지나면 사라진다(ms)
+
+  add(from, msg, kind){
+    if(!Net.on) return;
+    const d = document.createElement('div');
+    d.className = 'm' + (kind ? ' '+kind : '');
+    d.innerHTML = from ? `<b>${escHtml(from)}</b> ${escHtml(msg)}` : escHtml(msg);
+    elChatLog.appendChild(d);
+    while(elChatLog.children.length > this.MAX) elChatLog.removeChild(elChatLog.firstChild);
+    setTimeout(()=>{ if(d.parentNode) d.remove(); }, this.LIFE);
+  },
+  system(msg){ this.add(null, msg, 'sys'); },
+
+  send(){
+    const v = (elChatIn.value || '').trim();
+    elChatIn.value = '';
+    if(!v || !Net.on) return;
+    Net.send({t:'chat', msg: v.slice(0,80)});
+    this.add(Net.name, v.slice(0,80), 'me');
+  },
+  show(on){
+    elChat.style.display = on ? 'block' : 'none';
+    elHud.classList.toggle('mp', !!on);
+    if(!on) elChatLog.innerHTML = '';
+  }
+};
+
 const Net = {
   ws:null, on:false, id:0, code:'', host:false, started:false, name:'탐험가',
   players:new Map(),          // id -> {name,color,x,z,yaw,mov,dead, g, tag, cx,cz,cyaw}
@@ -1785,7 +1855,7 @@ const Net = {
   send(o){ if(this.on && this.ws && this.ws.readyState===1){
     try{ this.ws.send(JSON.stringify(o)); }catch(e){} } },
 
-  leave(){ this.on=false; this.started=false; this.clearAvatars();
+  leave(){ this.on=false; this.started=false; Chat.show(false); this.clearAvatars();
     try{ if(this.ws) this.ws.close(); }catch(e){}
     this.ws=null; elParty.style.display='none'; },
 
@@ -1869,8 +1939,14 @@ const Net = {
         netRemoteEra(m.index);
         break;
 
+      case 'chat':
+        Chat.add(m.from, m.msg);
+        Snd.throttle('pick', 600, .35);
+        break;
+
       case 'toast':
         toast(m.msg);
+        Chat.system(m.msg);
         break;
     }
   },
@@ -1896,8 +1972,9 @@ const Net = {
   },
 
   drawParty(){
-    if(!this.on){ elParty.style.display='none'; return; }
+    if(!this.on){ elParty.style.display='none'; Chat.show(false); return; }
     elParty.style.display='flex';
+    Chat.show(true);
     const me = `<span class="me">${this.name}${this.host?' 👑':''}</span>`;
     const others = [...this.players.values()].map(p=>
       `<span class="${p.dead?'dead':''}">${p.name}</span>`).join('');
@@ -4680,11 +4757,20 @@ function gameOver(){
   }, 700);
 }
 
+/* 함께 탐험할 때 서로 겹쳐 서지 않도록 시작 위치를 조금 벌린다 */
+function spreadStart(){
+  if(!Net.on || !Net.id) return;
+  const a = (Net.id % 8) / 8 * TAU;
+  player.x += Math.cos(a) * 3.4;
+  player.z += Math.sin(a) * 3.4;
+}
+
 /* 멀티플레이 부활 */
 function netRespawn(){
   const era = ERAS[S.eraIndex];
   dead = false; paused = false;
   player.x = era.start.x; player.z = era.start.z; yaw = 0; pitch = -.05;
+  spreadStart();
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60);
   equipId = null; swingT = 0;
@@ -4771,6 +4857,7 @@ function startEra(){
   }
 
   player.x=era.start.x; player.z=era.start.z; yaw=0; pitch=-.05;
+  spreadStart();
   refresh(); paused=false; fade(0); nearest=null;
   speedMul=1; camShake=0; dragMode=null; running=false; dead=false;
   elHurt.style.opacity='0';
@@ -4798,6 +4885,14 @@ function isTyping(){
   return tag==='input' || tag==='textarea' || tag==='select' || el.isContentEditable;
 }
 addEventListener('keydown',e=>{
+  /* Enter : 채팅 열기 / 보내기, Esc : 닫기 */
+  if(e.code==='Enter' || e.code==='NumpadEnter'){
+    if(!Net.on) return;
+    if(document.activeElement === elChatIn){ e.preventDefault(); Chat.send(); elChatIn.blur(); }
+    else if(!isTyping() && !paused){ e.preventDefault(); elChatIn.focus(); }
+    return;
+  }
+  if(e.code==='Escape' && document.activeElement===elChatIn){ elChatIn.blur(); return; }
   if(isTyping()) return;
   keys[e.code]=true;
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=true;
@@ -4962,6 +5057,11 @@ cv.addEventListener('pointermove',e=>{
 const dmEnd=()=>{ if(!dragMode) return; dmLast=null; if(dragMode.onEnd) dragMode.onEnd(); };
 cv.addEventListener('pointerup',dmEnd);
 cv.addEventListener('pointercancel',dmEnd);
+
+/* 채팅 보내기 버튼 (태블릿) */
+document.getElementById('chatSend').addEventListener('click', e=>{
+  e.preventDefault(); Snd.resume(); Chat.send();
+});
 
 /* 🏃 달리기 버튼 : 누르고 있는 동안만 달린다 */
 const runBtn=document.getElementById('runBtn');
