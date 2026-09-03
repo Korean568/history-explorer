@@ -74,7 +74,15 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if ((url === '/api/signup' || url === '/api/login' || url === '/api/nick')
+    if (url === '/api/users' && req.method === 'GET') {
+      auth.listUsers(bearer())
+        .then(r => r.err ? done(403, r) : done(200, r))
+        .catch(e => { console.error(e); done(500, { err: '서버에 문제가 생겼어요.' }); });
+      return;
+    }
+
+    if ((url === '/api/signup' || url === '/api/login' || url === '/api/nick'
+         || url === '/api/users/delete' || url === '/api/users/pw')
         && req.method === 'POST') {
       let body = '';
       req.on('data', c => { body += c; if (body.length > 4096) req.destroy(); });
@@ -82,9 +90,11 @@ const server = http.createServer((req, res) => {
         let b; try { b = JSON.parse(body || '{}'); } catch (e) { return done(400, { err:'잘못된 요청' }); }
         try {
           let r;
-          if (url === '/api/signup')     r = await auth.signup(b.id, b.nick, b.pw, ip);
-          else if (url === '/api/login') r = await auth.login(b.id, b.pw, ip);
-          else                           r = await auth.changeNick(bearer(), b.nick);
+          if (url === '/api/signup')            r = await auth.signup(b.id, b.nick, b.pw, ip);
+          else if (url === '/api/login')       r = await auth.login(b.id, b.pw, ip);
+          else if (url === '/api/nick')        r = await auth.changeNick(bearer(), b.nick);
+          else if (url === '/api/users/delete') r = await auth.removeUser(bearer(), b.id);
+          else                                  r = await auth.resetPw(bearer(), b.id, b.pw);
           return r.err ? done(400, r) : done(200, r);
         } catch (e) {
           console.error(e);

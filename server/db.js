@@ -72,6 +72,16 @@ function makePg(){
       const r = await pool.query('DELETE FROM users WHERE uname=$1', [uname]);
       return r.rowCount > 0;
     },
+    async setPw(uname, hash, salt){
+      await pool.query('UPDATE users SET pw_hash=$2, pw_salt=$3 WHERE uname=$1',
+                       [uname, hash, salt]);
+    },
+    async listUsers(){
+      const r = await pool.query(
+        `SELECT uname, uname_disp, nick, is_admin, created_at, last_login
+           FROM users ORDER BY created_at`);
+      return r.rows;
+    },
     async touchLogin(uname){
       await pool.query('UPDATE users SET last_login=now() WHERE uname=$1', [uname]);
     },
@@ -130,6 +140,14 @@ function makeFile(){
     async deleteUser(uname){
       if (!data.users[uname]) return false;
       delete data.users[uname]; save(); return true;
+    },
+    async setPw(uname, hash, salt){
+      const u = data.users[uname];
+      if (u) { u.pw_hash = hash; u.pw_salt = salt; save(); }
+    },
+    async listUsers(){
+      return Object.values(data.users)
+        .sort((a,b) => String(a.created_at||'').localeCompare(String(b.created_at||'')));
     },
     async touchLogin(uname){
       if (data.users[uname]) { data.users[uname].last_login = new Date().toISOString(); save(); }

@@ -170,6 +170,56 @@ async function changeNick(token, nick){
   return session(row);
 }
 
+/* ---------------------------------------------------------
+   관리자 전용
+   --------------------------------------------------------- */
+async function asAdmin(token){
+  const who = whoIs(token);
+  if (!who) return null;
+  const row = await db.getUser(who.uname);
+  if (!row) return null;
+  const ok = ADMIN_USER ? (who.uname === ADMIN_USER) : !!row.is_admin;
+  return ok ? who : null;
+}
+function slim(row, adminUname){
+  return {
+    id: row.uname_disp,
+    nick: row.nick || row.uname_disp,
+    admin: ADMIN_USER ? (row.uname === ADMIN_USER) : !!row.is_admin,
+    me: row.uname === adminUname,
+    created: row.created_at || null,
+    last: row.last_login || null
+  };
+}
+async function listUsers(token){
+  const who = await asAdmin(token);
+  if (!who) return { err: '관리자만 볼 수 있어요.' };
+  const rows = await db.listUsers();
+  return { users: rows.map(r => slim(r, who.uname)) };
+}
+async function removeUser(token, id){
+  const who = await asAdmin(token);
+  if (!who) return { err: '관리자만 할 수 있어요.' };
+  const uname = String(id || '').trim().toLowerCase();
+  if (!uname) return { err: '아이디를 알려 주세요.' };
+  if (uname === who.uname)   return { err: '자기 계정은 지울 수 없어요.' };
+  if (uname === ADMIN_USER)  return { err: '관리자 계정은 지울 수 없어요.' };
+  const gone = await db.deleteUser(uname);
+  return gone ? { ok: true } : { err: '그런 계정이 없어요.' };
+}
+async function resetPw(token, id, pw){
+  const who = await asAdmin(token);
+  if (!who) return { err: '관리자만 할 수 있어요.' };
+  const p = checkPw(pw); if (p.err) return p;
+  const uname = String(id || '').trim().toLowerCase();
+  const row = await db.getUser(uname);
+  if (!row) return { err: '그런 계정이 없어요.' };
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = await hashPw(p.ok, salt);
+  await db.setPw(uname, hash, salt);
+  return { ok: true };
+}
+
 /* 토큰으로 사용자 확인 */
 function whoIs(token){
   const p = verify(token);
@@ -177,4 +227,5 @@ function whoIs(token){
   return { uname: p.u, id: p.d || p.u, nick: p.n || p.d || p.u, admin: !!p.a };
 }
 
-module.exports = { initSecret, signup, login, me, changeNick, whoIs, ADMIN_USER };
+module.exports = { initSecret, signup, login, me, changeNick, whoIs,
+                   listUsers, removeUser, resetPw, ADMIN_USER };

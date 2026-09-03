@@ -135,6 +135,21 @@
     background:var(--bark);border:none;border-bottom:4px solid #3d2d20;border-radius:12px;cursor:pointer;}
   .mini:active{transform:translateY(2px);border-bottom-width:2px;}
   #admList{display:grid;gap:8px;margin-top:10px;}
+  .admhead{display:flex;justify-content:space-between;align-items:center;
+    margin:14px 0 6px;font-size:13.5px;font-weight:800;color:#7a6653;}
+  #admUserList{display:grid;gap:6px;max-height:230px;overflow:auto;}
+  .urow{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    background:#fff;border:2.5px solid #e3d5bb;border-radius:12px;padding:8px 10px;}
+  .urow .who{font-size:13.5px;font-weight:800;color:var(--ink);}
+  .urow .who .uid{font-size:11px;color:#8a7864;font-weight:700;margin-left:3px;}
+  .urow .sub{font-size:11px;color:#8a7864;font-weight:700;margin-top:1px;}
+  .urow .acts{display:flex;gap:5px;flex:0 0 auto;}
+  .ubtn{padding:5px 9px;font-size:11.5px;font-weight:800;font-family:inherit;cursor:pointer;
+    border:none;border-radius:8px;background:#e3d5bb;color:#5c4433;}
+  .ubtn.del{background:#e8b4ab;color:#7d2b1c;}
+  .ubtn:active{transform:translateY(1px);}
+  .urow.self{background:#fff8e6;border-color:var(--sun);}
+  .ubadge{font-size:10px;background:var(--sun);border-radius:6px;padding:1px 5px;margin-left:4px;}
   #admList .mini{width:100%;background:var(--moss);border-bottom-color:#33521f;}
   #admMsg{margin:8px 0 0;font-size:13.5px;font-weight:700;min-height:18px;}
 
@@ -475,6 +490,9 @@
         <button class="mini" data-era="1">🌱 신석기 시대로 바로 가기</button>
         <button class="mini" data-era="2">⚒️ 청동기 시대로 바로 가기</button>
       </div>
+      <div class="admhead"><span>👥 계정 관리</span>
+        <button class="mini2" id="admRefresh">🔄 새로고침</button></div>
+      <div id="admUserList"></div>
     </div>
   </div>
 </div>
@@ -5383,18 +5401,68 @@ function mpStartBtn(){
 
 /* ---------- 관리자 모드 : 시대 바로 이동 ---------- */
 (function admin(){
-  /* 관리자 여부는 서버가 로그인할 때 알려 줍니다.
-     브라우저 쪽 비밀번호가 아니라 계정으로 확인하므로 우회할 수 없습니다. */
+  /* 관리자 여부는 서버가 확인합니다.
+     브라우저 쪽 비밀번호가 아니라 계정으로 판단하므로 우회할 수 없습니다. */
   const box=document.getElementById('adm'), btn=document.getElementById('admBtn'),
-        list=document.getElementById('admList'), note=document.getElementById('admMsg');
+        list=document.getElementById('admList'), note=document.getElementById('admMsg'),
+        users=document.getElementById('admUserList');
+
+  const say=(t,ok)=>{ note.style.color = ok===false ? '#c0392b' : '#4e7a3a'; note.textContent=t; };
+  const when=(v)=>{
+    if(!v) return '접속 기록 없음';
+    const d=new Date(v);
+    return isNaN(d) ? '' : `최근 접속 ${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`;
+  };
+
+  async function loadUsers(){
+    if(!Me.admin) return;
+    users.innerHTML = '<p class="empty">불러오는 중…</p>';
+    try{
+      const r = await Me.api('/api/users');
+      if(!r.users.length){ users.innerHTML='<p class="empty">계정이 없어요.</p>'; return; }
+      users.innerHTML = r.users.map(u=>`
+        <div class="urow ${u.me?'self':''}">
+          <span>
+            <span class="who">${u.nick}<span class="uid">@${u.id}</span>${
+              u.admin?'<span class="ubadge">관리자</span>':''}</span>
+            <div class="sub">${when(u.last)}</div>
+          </span>
+          <span class="acts">
+            <button class="ubtn" data-pw="${u.id}">비번 초기화</button>
+            ${(u.me||u.admin)?'' :`<button class="ubtn del" data-del="${u.id}">삭제</button>`}
+          </span>
+        </div>`).join('');
+    }catch(e){ users.innerHTML = `<p class="empty err">${e.message}</p>`; }
+  }
+
+  users.addEventListener('click', async e=>{
+    const pwBtn = e.target.closest('button[data-pw]');
+    const delBtn = e.target.closest('button[data-del]');
+    try{
+      if(pwBtn){
+        const id = pwBtn.dataset.pw;
+        const v = prompt(`${id} 계정의 새 비밀번호를 정해 주세요 (6자 이상)`);
+        if(!v) return;
+        await Me.api('/api/users/pw', {id, pw:v});
+        say(`${id} 의 비밀번호를 바꿨어요. 본인에게 알려 주세요.`);
+      }
+      if(delBtn){
+        const id = delBtn.dataset.del;
+        if(!confirm(`${id} 계정을 정말 지울까요?\n되돌릴 수 없습니다.`)) return;
+        await Me.api('/api/users/delete', {id});
+        say(`${id} 계정을 지웠어요.`);
+        loadUsers();
+      }
+    }catch(err){ say(err.message, false); }
+  });
 
   btn.addEventListener('click',()=>{
     if(!Me.admin) return;
     const open = box.style.display==='none';
     box.style.display = open ? 'block' : 'none';
-    note.style.color='#4e7a3a';
-    note.textContent = `${Me.nick} 님 · 시작할 시대를 고르세요.`;
+    if(open){ say(`${Me.nick} 님 · 시대를 고르거나 계정을 관리하세요.`); loadUsers(); }
   });
+  document.getElementById('admRefresh').addEventListener('click', loadUsers);
 
   list.addEventListener('click',e=>{
     const b=e.target.closest('button[data-era]');
