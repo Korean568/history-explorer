@@ -941,6 +941,8 @@ const NIGHT_SEC  = 120;              // 밤 2분
 const CYCLE      = DAY_SEC + NIGHT_SEC;
 const FADE_SEC   = 8;                // 해질녘 · 새벽에 걸리는 시간(초)
 const WOOD_NEED  = 5;                // 모닥불에 불을 피우려면 벌목해야 하는 나무 수
+/* 나무를 벨 때 쓰는 도구 — 구석기는 뗀석기, 그 뒤로는 간석기 */
+const chopTool = ()=> (S.eraIndex===0 ? '뗀석기' : '간석기');
 const FAR_DIST   = 75;               // 이보다 멀리 가면 멧돼지가 나타날 수 있다
 const FAR_CHANCE = 0.25;             // 그때 멧돼지가 나타날 확률
 const FAR_EVERY  = 15;               // 먼 곳에 머무는 동안 몇 초마다 판정하는가
@@ -1106,7 +1108,7 @@ function fireLit(){ return firePits.some(f=>f.lit()); }
 function duskWarn(){
   if(paused) return;
   if(!fireLit()) centerMsg('<h2>🌆 해가 지고 있어요</h2>'+
-    '<p>모닥불에 불이 없습니다. 🪓 <b>뗀석기로 나무를 '+WOOD_NEED+'그루 베어</b> 장작을 모으세요!</p>', 3600);
+    '<p>모닥불에 불이 없습니다. 🪓 <b>'+chopTool()+'로 나무를 '+WOOD_NEED+'그루 베어</b> 장작을 모으세요!</p>', 3600);
   else centerMsg('<h2>🌆 해가 지고 있어요</h2><p>🔥 모닥불이 곧 타오릅니다.</p>', 2400);
 }
 function nightFall(){
@@ -2087,7 +2089,7 @@ function campfireRing(x,z,opt){
 
   if(needWood) addStation(x,z,{ range:4.2, net:'solo',
     label:()=> lit() ? '🔥 모닥불 — 멧돼지가 다가오지 못해요'
-                     : `🪵 장작이 필요해요 (${S.c.wood||0}/${WOOD_NEED}) — 뗀석기로 나무를 베세요`,
+                     : `🪵 장작이 필요해요 (${S.c.wood||0}/${WOOD_NEED}) — ${chopTool()}로 나무를 베세요`,
     ready:()=> false, act(){} });
 
   animated.push((t)=>{
@@ -2136,9 +2138,8 @@ function polishSite(x,z){
   grindStone(x,z);
   siteMarker(x,z,0xbfc6cf);
   addStation(x,z,{ range:4.8, tag:'polish', net:'solo',
-    label:()=> S.mission.polish ? '🪓 간석기를 만들었어요'
-             : (S.mission.knap ? '🪓 돌 갈기 (간석기 만들기)' : '🪓 먼저 뗀석기를 만들어야 해요'),
-    ready:()=> !S.mission.polish && !!S.mission.knap,
+    label:()=> S.mission.polish ? '🪓 간석기를 만들었어요' : '🪓 돌 갈기 (간석기 만들기)',
+    ready:()=> !S.mission.polish,
     act:()=> polishGame() });
 }
 /* ---------- 벌목장 ---------- */
@@ -2185,7 +2186,7 @@ function choppableTree(x,z,s){
   });
   const canChop = ()=> S.eraIndex===0 ? (S.c.tool||0)>=1 : (S.c.polish||0)>=1;
   const needTxt = ()=> S.eraIndex===0 ? '🪓 뗀석기가 있어야 나무를 벨 수 있어요'
-                                      : '🪓 간석기(간 돌도끼)가 있어야 나무를 벨 수 있어요';
+                                      : '🪓 간석기를 먼저 만들어야 나무를 벨 수 있어요';
   const it = addStation(x,z,{ range:3.8, tag:'chop',
     label:()=> (S.c.wood||0) >= WOOD_NEED ? '🪵 장작을 충분히 모았어요'
              : (!canChop() ? needTxt() : `🪓 나무 베기 (장작 ${S.c.wood||0}/${WOOD_NEED})`),
@@ -2554,8 +2555,6 @@ const ERAS = [
   intro:['🌱 신석기 시대','이제 <b>배고픔</b>이 생겼어요. 구석기에서 모은 식량이 함께 왔습니다.',
          '식량이 떨어지지 않게 열매도 챙기며 순서대로 진행하세요!'],
   missions:[
-    {id:'knap',   t:'뗀석기 만들기', find:'knap',
-     tip:'먼저 돌을 깨뜨려 기본 도구를 만들어요.'},
     {id:'polish', t:'간석기 만들기', find:'polish',
      tip:'숫돌에 돌을 갈아 날이 매끄러운 간석기를 만들어요.'},
     {id:'wood',   t:'나무 베기', find:'chop', prog:()=>`${S.c.wood||0}/${WOOD_NEED}`,
@@ -2585,8 +2584,6 @@ const ERAS = [
   intro:['⚒️ 청동기 시대','청동으로 도구를 만들고 큰 마을을 이루던 시대예요.',
          '비파형 동검을 만들면 멧돼지와 맞설 수 있습니다!'],
   missions:[
-    {id:'knap',    t:'뗀석기 만들기', find:'knap',
-     tip:'청동기 시대에도 돌 도구는 계속 쓰였어요.'},
     {id:'polish',  t:'간석기 만들기', find:'polish',
      tip:'숫돌에 갈아 날이 고른 간석기를 만들어요.'},
     {id:'wood',    t:'나무 베기', find:'chop', prog:()=>`${S.c.wood||0}/${WOOD_NEED}`,
@@ -2784,8 +2781,7 @@ function buildNeo(){
   // 마을
   house(-6,32,1); house(6,36,1.05); house(14,28,.95);
   campfireRing(2,28,{needWood:true});
-  /* 1~3단계 : 뗀석기 · 간석기 · 벌목 */
-  knapSite(36,34);
+  /* 1~2단계 : 간석기 · 벌목 */
   polishSite(-31,32);
   chopGrove([[-30,48],[24,48],[-12,54],[12,56],[38,42],[-40,40],[0,60],[-22,60]]);
   foodBerries([[-34,6],[30,4],[-20,-2],[40,28],[-46,30]]);
@@ -2879,8 +2875,7 @@ function buildBronze(){
   house(-14,30,1.1); house(-4,36,1); house(8,32,1.15); house(18,38,1); house(24,28,1.05);
   storage(-24,32); storage(30,36);
   campfireRing(0,26,{needWood:true});
-  /* 1~3단계 : 뗀석기 · 간석기 · 벌목 */
-  knapSite(42,30);
+  /* 1~2단계 : 간석기 · 벌목 */
   polishSite(-45,32);
   chopGrove([[-34,46],[28,50],[-14,54],[14,58],[42,40],[-46,36],[2,62],[-24,62]]);
   foodBerries([[-46,28],[46,26],[-30,6],[34,8],[-16,-6]]);
@@ -4672,7 +4667,7 @@ function gameOver(){
          그래서 사람들은 <b>불을 피우고</b> 무리를 지어 몸을 지켰답니다.</p>
       <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
         <p style="margin:0;font-size:14px;line-height:1.7">
-          💡 <b>뗀석기로 나무를 5그루</b> 베어 두면 밤에 모닥불이 타올라 멧돼지가 다가오지 못해요.<br>
+          💡 <b>돌도끼로 나무를 5그루</b> 베어 두면 밤에 모닥불이 타올라 멧돼지가 다가오지 못해요.<br>
           🏃 급할 때는 <b>Shift</b>(태블릿은 🏃 버튼)를 누른 채 <b>달려서</b> 도망치세요!</p>
       </div>
       <button class="big" id="ok">🔄 ${era.icon} ${era.name} 다시하기</button>`);
