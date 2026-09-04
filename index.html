@@ -695,16 +695,18 @@ const SOUNDS = {
   owl:           { url:null, vol:0.28 },
   /* 이스터에그 — sounds/ 폴더에 같은 이름의 .mp3 를 넣으면 그 소리를 씁니다.
      파일이 없으면 아래의 내장 합성음이 그대로 나옵니다. (소리-넣는법.md 참고) */
-  gunShot:       { url:'sounds/gunShot.mp3',     vol:0.55 },
-  gunCock:       { url:'sounds/gunCock.mp3',     vol:0.40 },
-  gunTail:       { url:'sounds/gunTail.mp3',     vol:0.30 },   // 멀리 퍼지는 메아리
-  gunDry:        { url:'sounds/gunDry.mp3',      vol:0.35 },   // 빈 탄창 : 찰칵
-  magRelease:    { url:'sounds/magRelease.mp3',  vol:0.35 },   // 탄창 멈치
-  magOut:        { url:'sounds/magOut.mp3',      vol:0.35 },   // 탄창을 뽑는다
-  magIn:         { url:'sounds/magIn.mp3',       vol:0.45 },   // 새 탄창을 끼운다
-  boltPull:      { url:'sounds/boltPull.mp3',    vol:0.40 },   // 노리쇠를 당긴다
-  boltRelease:   { url:'sounds/boltRelease.mp3', vol:0.45 },   // 노리쇠를 놓는다
-  shell:         { url:'sounds/shell.mp3',       vol:0.22 }    // 탄피가 바닥에 떨어진다
+  gunShot:       { url:'sounds/gunShot.mp3', vol:0.55 },   // 발사
+  reload:        { url:'sounds/reload.mp3',  vol:0.55 },   // 장전 전체 (탄창+노리쇠)
+  gunDry:        { url:'sounds/gunDry.mp3',  vol:0.35 },   // 빈 탄창 : 찰칵
+  shell:         { url:'sounds/shell.mp3',   vol:0.22 },   // 탄피가 바닥에 떨어진다
+  /* 아래는 reload.mp3 가 없을 때 순서대로 나는 내장 소리입니다 */
+  gunCock:       { url:null, vol:0.40 },
+  gunTail:       { url:null, vol:0.30 },
+  magRelease:    { url:null, vol:0.35 },   // 탄창 멈치
+  magOut:        { url:null, vol:0.35 },   // 탄창을 뽑는다
+  magIn:         { url:null, vol:0.45 },   // 새 탄창을 끼운다
+  boltPull:      { url:null, vol:0.40 },   // 노리쇠를 당긴다
+  boltRelease:   { url:null, vol:0.45 }    // 노리쇠를 놓는다
 };
 
 /* =========================================================
@@ -881,6 +883,8 @@ const Snd = (function(){
                        burst({type:'lowpass',freq:900,vol:.18*v,dur:.09,atk:.002});
                        tone({type:'square',freq:340,to:140,dur:.07,vol:.11*v,atk:.001}); },
     /* 노리쇠를 당겼다 놓는 한 동작 */
+    /* reload.mp3 가 없을 때는 쓰이지 않는다 (단계별 소리가 대신 난다) */
+    reload:(v)=>{},
     gunCock:(v)=>{ burst({type:'bandpass',freq:2800,q:2.0,sweep:1400,vol:.24*v,dur:.14,atk:.006});
                    burst({type:'bandpass',freq:5200,q:6,vol:.28*v,dur:.045,delay:.17,atk:.0008});
                    burst({type:'lowpass',freq:900,vol:.16*v,dur:.09,delay:.17,atk:.002});
@@ -986,8 +990,12 @@ const Snd = (function(){
   }
 
   function mute(m){ try{ if(on) master.gain.value = m?0:0.9; }catch(e){} }
+  /* 그 이름의 소리 파일이 실제로 준비됐는가 / 길이는 몇 초인가 */
+  function hasFile(name){ return !!file[name]; }
+  function dur(name){ return file[name] ? file[name].duration : 0; }
+
   return { init, resume, play, throttle, ambient, fadeOut, dragStart, dragLevel, dragStop, mute,
-           get ready(){ return on; } };
+           hasFile, dur, get ready(){ return on; } };
 })();
 
 /* =========================================================
@@ -1614,7 +1622,9 @@ let equipId = null;            // 지금 들고 있는 도구 id (없으면 null
 let swingT = 0;                // 휘두르는 중
 /* ---- AK-47 : 탄창과 조준 ---- */
 const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
-const AK_RELOAD = 2.2;         // 장전에 걸리는 시간(초)
+const AK_RELOAD = 2.2;         // 장전에 걸리는 시간(초) — 기본값
+let   reloadDur = 2.2;         // 이번 장전에 실제로 걸리는 시간
+                               // (sounds/reload.mp3 가 있으면 그 길이에 맞춘다)
 /* 장전하는 동안 순서대로 나는 소리 (초, 소리이름) */
 const RELOAD_STEPS = [
   [0.00, 'magRelease'],        // 탄창 멈치를 누른다
@@ -1892,7 +1902,7 @@ function updateHand(dt, t){
     const U = it.view.userData;
     let qx=px, qy=py, qz=pz, ax=rx, ay=ry, az=rz;
     if(reloadT>0){
-      const q = 1 - reloadT/AK_RELOAD;                       // 0 → 1
+      const q = 1 - reloadT/reloadDur;                       // 0 → 1
       const seg = (a,b)=> Math.max(0, Math.min(1, (q-a)/(b-a)));
       const ease = (x)=> x*x*(3-2*x);
       const w = ease(seg(0,.14)) - ease(seg(.85,1));         // 자세를 잡았다가 되돌린다
@@ -5186,8 +5196,16 @@ function reload(){
   if(paused || dead || equipId!=='ak') return;
   if(reloadT>0) return;
   if((S.ammo|0) >= AK_MAG){ toast('🔫 탄창이 이미 가득 찼어요'); return; }
-  reloadT = AK_RELOAD;
-  reloadStep = 0;
+  /* sounds/reload.mp3 를 넣어 두면 그 소리 하나로 장전 전체를 대신한다 */
+  if(Snd.hasFile('reload')){
+    reloadDur = Math.max(1.0, Math.min(4.0, Snd.dur('reload')));
+    reloadStep = RELOAD_STEPS.length;          // 단계별 소리는 건너뛴다
+    Snd.play('reload', 1.0);
+  } else {
+    reloadDur = AK_RELOAD;
+    reloadStep = 0;
+  }
+  reloadT = reloadDur;
   toast('🔄 장전하는 중…');
   drawAmmo();
 }
@@ -5196,7 +5214,7 @@ function updateReload(dt){
   if(reloadT<=0) return;
   reloadT = Math.max(0, reloadT - dt);
   /* 지나온 시각의 소리를 순서대로 낸다 */
-  const done = AK_RELOAD - reloadT;
+  const done = reloadDur - reloadT;
   while(reloadStep < RELOAD_STEPS.length && done >= RELOAD_STEPS[reloadStep][0]){
     Snd.play(RELOAD_STEPS[reloadStep][1], 1.0);
     reloadStep++;
