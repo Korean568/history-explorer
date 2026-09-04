@@ -702,7 +702,8 @@ const SOUNDS = {
   magOut:        { url:null, vol:0.35 },   // 탄창을 뽑는다
   magIn:         { url:null, vol:0.45 },   // 새 탄창을 끼운다
   boltPull:      { url:null, vol:0.40 },   // 노리쇠를 당긴다
-  boltRelease:   { url:null, vol:0.45 }    // 노리쇠를 놓는다
+  boltRelease:   { url:null, vol:0.45 },   // 노리쇠를 놓는다
+  shell:         { url:null, vol:0.22 }    // 탄피가 바닥에 떨어진다
 };
 
 /* =========================================================
@@ -867,6 +868,9 @@ const Snd = (function(){
                  burst({type:'bandpass',freq:3600,q:6,vol:.10*v,dur:.04,delay:.045}); },
     boltPull:(v)=>{ burst({type:'bandpass',freq:2800,q:2.0,sweep:1400,vol:.24*v,dur:.14,atk:.006});
                     burst({type:'highpass',freq:5200,vol:.08*v,dur:.10,atk:.01}); },
+    shell:(v)=>{ burst({type:'bandpass',freq:6400,q:12,vol:.13*v,dur:.05,atk:.0006});
+                 burst({type:'bandpass',freq:4300,q:9,vol:.08*v,dur:.06,delay:.05});
+                 tone({type:'triangle',freq:2500,to:1700,dur:.05,vol:.035*v,delay:.02}); },
     boltRelease:(v)=>{ burst({type:'bandpass',freq:5200,q:6,vol:.30*v,dur:.045,atk:.0008});
                        burst({type:'lowpass',freq:900,vol:.18*v,dur:.09,atk:.002});
                        tone({type:'square',freq:340,to:140,dur:.07,vol:.11*v,atk:.001}); },
@@ -1673,13 +1677,14 @@ function akModel(){
   add(boxM(.036,.048,.044,GUN_METAL), 0, .046,-.360);           // 가스 블록
   add(tubeM(.010,.185,GUN_STEEL,8),   0, .056,-.262);           // 가스관
 
-  /* -- 나무 총열덮개 -- */
-  const up=add(boxM(.044,.034,.150,GUN_WOOD), 0,.058,-.238);
+  /* -- 나무 총열덮개 (총몸까지 빈틈 없이 이어진다) -- */
+  const up=add(boxM(.044,.034,.196,GUN_WOOD), 0,.058,-.243);
   up.rotation.x=-.02;
-  add(boxM(.048,.010,.150,GUN_WOOD2), 0,.076,-.238);            // 윗면 결
-  add(boxM(.052,.058,.170,GUN_WOOD),  0,-.014,-.212);
-  add(boxM(.056,.016,.170,GUN_WOOD2), 0,-.040,-.212);           // 손이 닿는 아랫결
-  add(boxM(.058,.036,.026,GUN_DARK),  0,-.008,-.128);           // 덮개 고정쇠
+  add(boxM(.048,.010,.196,GUN_WOOD2), 0,.076,-.243);            // 윗면 결
+  add(boxM(.046,.034,.060,GUN_METAL), 0,.052,-.118);            // 가스관 뒷목
+  add(boxM(.052,.058,.210,GUN_WOOD),  0,-.014,-.195);
+  add(boxM(.056,.016,.210,GUN_WOOD2), 0,-.040,-.195);           // 손이 닿는 아랫결
+  add(boxM(.058,.038,.050,GUN_DARK),  0,-.008,-.105);           // 덮개 고정쇠
 
   /* -- 가늠쇠 · 총구 -- */
   add(boxM(.032,.052,.038,GUN_METAL), 0, .048,-.474);
@@ -1703,6 +1708,9 @@ function akModel(){
   });
   mag.position.set(0,-.030,-.030); g.add(mag);
   g.userData.mag = mag; g.userData.handle = handle;
+  /* 탄피가 튀어나오는 자리 : 총몸 오른쪽 배출구 */
+  const port = new THREE.Object3D(); port.position.set(.034,.040,.010); g.add(port);
+  g.userData.port = port;
 
   /* -- 방아쇠울 · 방아쇠 -- */
   add(boxM(.038,.010,.086,GUN_METAL), 0,-.098,.086);
@@ -1735,6 +1743,41 @@ function akModel(){
   g.userData.flash=flash;
 
   return g;
+}
+
+/* 탄피 하나가 오른쪽 위로 튀어 올랐다가 땅에 떨어진다 */
+function ejectShell(p, right, up, fwd){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(.0058,.0052,.020,6), M(0xc9a227));
+  body.rotation.z = Math.PI/2; g.add(body);
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(.0066,.0066,.0035,6), M(0xa8871c));
+  rim.rotation.z = Math.PI/2; rim.position.x = -.011; g.add(rim);
+  g.position.copy(p); world.add(g);
+
+  const v = new THREE.Vector3()
+    .addScaledVector(right, 1.5 + Math.random()*0.6)
+    .addScaledVector(up,    2.9 + Math.random()*0.8)
+    .addScaledVector(fwd,  -0.5 + Math.random()*0.4);
+  const sx=(Math.random()-.5)*26, sy=(Math.random()-.5)*26, sz=(Math.random()-.5)*26;
+  let life = 0, landed = false;
+  const f = (t,dt)=>{
+    life += dt;
+    if(!landed){
+      v.y -= 9.8*dt;
+      g.position.addScaledVector(v, dt);
+      g.rotation.x += sx*dt; g.rotation.y += sy*dt; g.rotation.z += sz*dt;
+      if(g.position.y <= .035){                    // 땅에 닿으면 멈춘다
+        g.position.y = .035; landed = true;
+        g.rotation.set(Math.PI/2*0, Math.random()*TAU, 0);
+        Snd.throttle('shell', 110, .9);
+      }
+    } else if(life > 2.2){
+      g.traverse(o=>{ if(o.material){ o.material.transparent=true;
+        o.material.opacity = Math.max(0, 1-(life-2.2)*2.2); } });
+    }
+    if(life > 2.7){ world.remove(g); removeAnim(f); }
+  };
+  animated.push(f);
 }
 
 /* 총알이 지나갈 길이 큰 바위·나무에 막혀 있는가 */
@@ -5197,13 +5240,21 @@ function shoot(it, now){
   camera.updateMatrixWorld(true);
 
   /* 총알은 눈이 아니라 총구에서 나간다 */
+  const U = it.view.userData || {};
   const mv = new THREE.Vector3();
-  const fl2 = it.view.userData && it.view.userData.flash;
-  if(fl2) fl2.getWorldPosition(mv); else mv.set(player.x, 1.45, player.z);
+  if(U.flash) U.flash.getWorldPosition(mv); else mv.set(player.x, 1.45, player.z);
 
   /* 조준선 : 화면 한가운데가 향하는 방향 (위아래까지 그대로) */
   const fwd = new THREE.Vector3();
   camera.getWorldDirection(fwd);
+
+  /* 탄피가 오른쪽으로 튀어 나온다 */
+  if(U.port){
+    const ep = new THREE.Vector3(); U.port.getWorldPosition(ep);
+    const rt = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+    const uv = new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+    ejectShell(ep, rt, uv, fwd);
+  }
   const eye = new THREE.Vector3(player.x, 1.72, player.z);
 
   const ads    = aimK > .6;
