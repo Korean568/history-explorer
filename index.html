@@ -695,7 +695,14 @@ const SOUNDS = {
   owl:           { url:null, vol:0.28 },
   /* 이스터에그 */
   gunShot:       { url:null, vol:0.55 },
-  gunCock:       { url:null, vol:0.40 }
+  gunCock:       { url:null, vol:0.40 },
+  gunTail:       { url:null, vol:0.30 },   // 멀리 퍼지는 메아리
+  gunDry:        { url:null, vol:0.35 },   // 빈 탄창 : 찰칵
+  magRelease:    { url:null, vol:0.35 },   // 탄창 멈치
+  magOut:        { url:null, vol:0.35 },   // 탄창을 뽑는다
+  magIn:         { url:null, vol:0.45 },   // 새 탄창을 끼운다
+  boltPull:      { url:null, vol:0.40 },   // 노리쇠를 당긴다
+  boltRelease:   { url:null, vol:0.45 }    // 노리쇠를 놓는다
 };
 
 /* =========================================================
@@ -827,14 +834,47 @@ const Snd = (function(){
                     burst({type:'highpass',freq:4200,vol:.05*v,dur:.7,delay:.3}); },
     owl:(v)=>{ tone({type:'sine',freq:420,to:360,dur:.30,vol:.13*v});
                tone({type:'sine',freq:400,to:330,dur:.38,vol:.11*v,delay:.42}); },
-    /* ---- 이스터에그 : 총 ---- */
-    gunShot:(v)=>{ burst({type:'highpass',freq:3000,vol:.60*v,dur:.05,atk:.001});
-                   burst({type:'lowpass',freq:1100,sweep:150,vol:.50*v,dur:.20,atk:.002});
-                   tone({freq:130,to:40,dur:.20,vol:.32*v,atk:.001});
-                   burst({type:'bandpass',freq:1500,q:.6,sweep:280,vol:.13*v,dur:.60,delay:.05}); },
-    gunCock:(v)=>{ burst({type:'bandpass',freq:2600,q:3,vol:.22*v,dur:.06});
-                   burst({type:'bandpass',freq:1700,q:3,vol:.20*v,dur:.07,delay:.09});
-                   tone({type:'square',freq:180,to:120,dur:.06,vol:.06*v,delay:.09}); }
+    /* ---- 이스터에그 : 총 ----
+       진짜 총소리는 ① 아주 짧고 날카로운 파열음 ② 가슴을 치는 저음
+       ③ 노리쇠가 왕복하는 금속음 ④ 들판에 퍼지는 메아리 가 겹쳐서 들립니다. */
+    gunShot:(v)=>{
+      /* ① 총구 파열음 — 1000분의 1초 만에 최대가 된다 */
+      burst({type:'highpass',freq:4600,vol:.78*v,dur:.030,atk:.0006});
+      burst({type:'bandpass',freq:2500,q:.5,vol:.66*v,dur:.055,atk:.0006});
+      burst({type:'highpass',freq:8000,vol:.30*v,dur:.018,atk:.0004});
+      /* ② 몸통 */
+      burst({type:'lowpass',freq:950,sweep:130,vol:.58*v,dur:.15,atk:.001});
+      tone({type:'sine',freq:156,to:36,dur:.22,vol:.40*v,atk:.001});
+      tone({type:'sawtooth',freq:82,to:30,dur:.12,vol:.15*v,atk:.001});
+      /* ③ 노리쇠 왕복 */
+      burst({type:'bandpass',freq:5400,q:7,vol:.15*v,dur:.040,delay:.024});
+      burst({type:'bandpass',freq:3200,q:5,vol:.12*v,dur:.048,delay:.058});
+      /* ④ 메아리 */
+      burst({type:'bandpass',freq:1000,q:.5,sweep:260,vol:.17*v,dur:.50,delay:.06,atk:.025});
+      burst({type:'lowpass',freq:620,sweep:170,vol:.10*v,dur:.80,delay:.15,atk:.06});
+    },
+    gunTail:(v)=>{ burst({type:'bandpass',freq:520,q:.4,sweep:150,vol:.30*v,dur:1.1,atk:.10}); },
+    gunDry:(v)=>{ burst({type:'bandpass',freq:4800,q:9,vol:.26*v,dur:.026});
+                  tone({type:'square',freq:520,to:300,dur:.03,vol:.05*v}); },
+    /* ---- 장전 ---- */
+    magRelease:(v)=>{ burst({type:'bandpass',freq:4300,q:9,vol:.24*v,dur:.028});
+                      tone({type:'square',freq:940,to:620,dur:.030,vol:.05*v}); },
+    magOut:(v)=>{ burst({type:'bandpass',freq:1500,q:1.5,sweep:520,vol:.22*v,dur:.17,atk:.004});
+                  tone({type:'triangle',freq:260,to:150,dur:.10,vol:.07*v,delay:.06}); },
+    magIn:(v)=>{ burst({type:'bandpass',freq:2100,q:2.6,vol:.26*v,dur:.06,atk:.001});
+                 burst({type:'lowpass',freq:520,vol:.20*v,dur:.11,atk:.002});
+                 tone({type:'triangle',freq:200,to:92,dur:.13,vol:.24*v,atk:.001});
+                 burst({type:'bandpass',freq:3600,q:6,vol:.10*v,dur:.04,delay:.045}); },
+    boltPull:(v)=>{ burst({type:'bandpass',freq:2800,q:2.0,sweep:1400,vol:.24*v,dur:.14,atk:.006});
+                    burst({type:'highpass',freq:5200,vol:.08*v,dur:.10,atk:.01}); },
+    boltRelease:(v)=>{ burst({type:'bandpass',freq:5200,q:6,vol:.30*v,dur:.045,atk:.0008});
+                       burst({type:'lowpass',freq:900,vol:.18*v,dur:.09,atk:.002});
+                       tone({type:'square',freq:340,to:140,dur:.07,vol:.11*v,atk:.001}); },
+    /* 노리쇠를 당겼다 놓는 한 동작 */
+    gunCock:(v)=>{ burst({type:'bandpass',freq:2800,q:2.0,sweep:1400,vol:.24*v,dur:.14,atk:.006});
+                   burst({type:'bandpass',freq:5200,q:6,vol:.28*v,dur:.045,delay:.17,atk:.0008});
+                   burst({type:'lowpass',freq:900,vol:.16*v,dur:.09,delay:.17,atk:.002});
+                   tone({type:'square',freq:340,to:140,dur:.07,vol:.10*v,delay:.17}); }
   };
 
   function play(name, mul){
@@ -1564,7 +1604,16 @@ let equipId = null;            // 지금 들고 있는 도구 id (없으면 null
 let swingT = 0;                // 휘두르는 중
 /* ---- AK-47 : 탄창과 조준 ---- */
 const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
-const AK_RELOAD = 1.9;         // 장전에 걸리는 시간(초)
+const AK_RELOAD = 2.2;         // 장전에 걸리는 시간(초)
+/* 장전하는 동안 순서대로 나는 소리 (초, 소리이름) */
+const RELOAD_STEPS = [
+  [0.00, 'magRelease'],        // 탄창 멈치를 누른다
+  [0.28, 'magOut'],            // 빈 탄창을 뽑는다
+  [1.00, 'magIn'],             // 새 탄창을 끼운다
+  [1.55, 'boltPull'],          // 노리쇠를 당긴다
+  [1.80, 'boltRelease']        // 놓으면 철컹
+];
+let reloadStep = 0;
 let reloadT = 0;               // 남은 장전 시간
 let emptyAt = -1e9;            // 빈 탄창 안내를 마지막으로 띄운 때
 let autoFire = true;           // 평소에는 연발, V 키로 단발과 번갈아 쓴다
@@ -1611,7 +1660,7 @@ function akModel(){
   for(let i=0;i<5;i++)                                          // 윗덮개의 홈
     add(boxM(.054,.006,.008,GUN_DARK), 0,.060,-.058+i*.030);
   add(boxM(.060,.030,.052,GUN_DARK),  0,-.030,-.098);           // 탄창 멈치 주변
-  add(boxM(.014,.016,.052,GUN_STEEL), .034,.030,-.016);         // 노리쇠 손잡이
+  const handle = add(boxM(.014,.016,.052,GUN_STEEL), .034,.030,-.016);   // 노리쇠 손잡이
   const sel=add(boxM(.008,.084,.014,GUN_STEEL), .032,.010,.030); // 조정간
   sel.rotation.z=.06;
 
@@ -1653,6 +1702,7 @@ function akModel(){
     rib.position.set(0,q[0],q[1]); rib.rotation.x=q[2]; mag.add(rib);
   });
   mag.position.set(0,-.030,-.030); g.add(mag);
+  g.userData.mag = mag; g.userData.handle = handle;
 
   /* -- 방아쇠울 · 방아쇠 -- */
   add(boxM(.038,.010,.086,GUN_METAL), 0,-.098,.086);
@@ -1763,6 +1813,7 @@ const ITEMS = [
     have:()=> !!S.ak,
     pos:[.175,-.230,-.500], rot:[.02,-.045,.02],
     aim:[0,-.0775,-.620],                       // 조준할 때 : 가늠자를 화면 한가운데로
+    reload:{ pos:[.050,-.150,-.660], rot:[.12,.40,-1.28] }, // 장전할 때 : 탄창이 보이게 눕힌다
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } }
 ];
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
@@ -1788,15 +1839,37 @@ function updateHand(dt, t){
     const A = it.aim, k = aimK;
     const px = P[0]+(A[0]-P[0])*k, py = P[1]+(A[1]-P[1])*k, pz = P[2]+(A[2]-P[2])*k;
     const rx = R[0]+(0-R[0])*k,    ry = R[1]+(0-R[1])*k,    rz = R[2]+(0-R[2])*k;
-    /* 장전 : 총을 아래로 내렸다가 다시 올린다 */
-    let dip = 0, tilt = 0;
+    /* 장전 : 총을 몸쪽으로 눕히고 탄창을 갈아 끼운 뒤 노리쇠를 당긴다 */
+    const U = it.view.userData;
+    let qx=px, qy=py, qz=pz, ax=rx, ay=ry, az=rz;
     if(reloadT>0){
-      const q = 1 - reloadT/AK_RELOAD;                 // 0 → 1
-      const w = Math.sin(Math.min(1,q*1.15)*Math.PI);  // 가운데서 가장 많이 내려간다
-      dip = w*.20; tilt = w*.55;
+      const q = 1 - reloadT/AK_RELOAD;                       // 0 → 1
+      const seg = (a,b)=> Math.max(0, Math.min(1, (q-a)/(b-a)));
+      const ease = (x)=> x*x*(3-2*x);
+      const w = ease(seg(0,.14)) - ease(seg(.85,1));         // 자세를 잡았다가 되돌린다
+      const RP = it.reload.pos, RR = it.reload.rot;
+      qx += (RP[0]-qx)*w; qy += (RP[1]-qy)*w; qz += (RP[2]-qz)*w;
+      ax += (RR[0]-ax)*w; ay += (RR[1]-ay)*w; az += (RR[2]-az)*w;
+      /* 탄창 : 앞으로 젖혀 뽑아 아래로 빼고, 새것이 올라와 끼워진다 */
+      if(U.mag){
+        const inT  = ease(seg(.36,.455));               // 새 탄창이 자리를 잡는 정도
+        const a  = Math.max(0, ease(seg(.05,.17)) - inT);   // 젖힌 정도
+        const dy = Math.max(0, ease(seg(.15,.30)) - inT);   // 내려간 정도
+        U.mag.rotation.x = -a*.62;
+        U.mag.position.y = -.030 - dy*.55 - a*.05;
+        U.mag.position.z = -.030 - a*.05;
+      }
+      /* 노리쇠 : 당겼다가 놓는다 */
+      if(U.handle){
+        const pull = ease(seg(.63,.705)) - ease(seg(.705,.815));
+        U.handle.position.z = -.016 + pull*.090;
+      }
+    } else {
+      if(U.mag){ U.mag.position.set(0,-.030,-.030); U.mag.rotation.x = 0; }
+      if(U.handle) U.handle.position.z = -.016;
     }
-    it.view.position.set(px+e*.020*(1-k*.6), py+bob-e*.006-dip, pz+e*.075);
-    it.view.rotation.set(rx+e*.26+tilt, ry-tilt*.5, rz+bob*.5);
+    it.view.position.set(qx+e*.020*(1-k*.6), qy+bob-e*.006, qz+e*.075);
+    it.view.rotation.set(ax+e*.26, ay, az+bob*.5);
     return;
   }
   if(swingT>0){
@@ -2647,7 +2720,8 @@ function supplyCrate(x,z,rotY,loot){
       openIt(); removeIt(it);
       if(ak){
         S.ak = true; S.ammo = AK_MAG;
-        Snd.play('gunCock', 1.0);
+        Snd.play('boltPull', 1.0);
+        setTimeout(()=>Snd.play('boltRelease', 1.0), 180);
         setTimeout(()=>Snd.play('levelUp',.8), 220);
         drawHotbar();
         centerMsg('<h2>🔫 ？？？</h2>'+
@@ -5053,7 +5127,7 @@ function toggleFireMode(){
   if(!it || !it.gun){ return; }
   autoFire = !autoFire;
   firing = false;
-  Snd.play('gunCock', .7);
+  Snd.play('magRelease', 1.0);
   toast(autoFire ? '🔫 연발 — 누르고 있으면 계속 나가요' : '🔫 단발 — 한 번 누르면 한 발');
   drawAmmo();
 }
@@ -5064,7 +5138,7 @@ function reload(){
   if(reloadT>0) return;
   if((S.ammo|0) >= AK_MAG){ toast('🔫 탄창이 이미 가득 찼어요'); return; }
   reloadT = AK_RELOAD;
-  Snd.play('gunCock', 1.0);
+  reloadStep = 0;
   toast('🔄 장전하는 중…');
   drawAmmo();
 }
@@ -5072,10 +5146,15 @@ function reload(){
 function updateReload(dt){
   if(reloadT<=0) return;
   reloadT = Math.max(0, reloadT - dt);
+  /* 지나온 시각의 소리를 순서대로 낸다 */
+  const done = AK_RELOAD - reloadT;
+  while(reloadStep < RELOAD_STEPS.length && done >= RELOAD_STEPS[reloadStep][0]){
+    Snd.play(RELOAD_STEPS[reloadStep][1], 1.0);
+    reloadStep++;
+  }
   if(reloadT===0){
     S.ammo = AK_MAG;
-    Snd.play('gunCock', 1.0);
-    toast('🔫 장전 완료 — 30발');
+    toast(`🔫 장전 완료 — ${AK_MAG}발`);
   }
   drawAmmo();
 }
@@ -5087,7 +5166,7 @@ function shoot(it, now){
     atkAt = now;
     if(now - emptyAt > 700){
       emptyAt = now;
-      Snd.play('claySoft', .8);
+      Snd.play('gunDry', 1.0);
       toast('🔫 탄창이 비었어요 — ' + josa(usingTouch?'🔄 버튼':'R 키','으로','로') + ' 장전하세요');
     }
     return;
