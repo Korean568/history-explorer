@@ -233,6 +233,9 @@
     display:none;align-items:baseline;gap:3px;padding:4px 12px;border-radius:12px;
     background:rgba(43,33,24,.80);border:2.5px solid rgba(255,255,255,.35);
     font-weight:800;color:#fff;letter-spacing:.5px;}
+  #ammo{cursor:pointer;}
+  #ammo .fm{font-size:10.5px;font-weight:800;padding:2px 6px;border-radius:7px;
+    background:rgba(255,255,255,.22);align-self:center;}
   #ammo .n{font-size:22px;line-height:1;}
   #ammo .m{font-size:12px;opacity:.7;}
   #ammo.low .n{color:#ffb4a8;}
@@ -485,7 +488,7 @@
         <b>잡히면 그 시대를 처음부터 다시 시작</b>합니다.</p>
       <p style="margin:0">🍖 신석기부터는 <b>배고픔</b>이 생겨요. 구석기에서 모은 식량이 함께 오고,
         <b>직접 먹어야</b> 합니다. (배고픔이 0이 되면 느려져요)</p>
-      <p style="margin:0">🔨 <b>아이템창</b>(1·2·3)에서 도구를 들고 휘두를 수 있어요 —
+      <p style="margin:0">🔨 <b>아이템창</b>(숫자 키)에서 도구를 들고 휘두를 수 있어요 —
         <b>뗀석기·간석기</b>는 멧돼지를 <b>5초 기절</b>시키고,
         청동기의 <b>비파형 동검</b>은 아예 물리칩니다!</p>
     </div>
@@ -1563,6 +1566,10 @@ let swingT = 0;                // 휘두르는 중
 const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
 const AK_RELOAD = 1.9;         // 장전에 걸리는 시간(초)
 let reloadT = 0;               // 남은 장전 시간
+let autoFire = true;           // 평소에는 연발, V 키로 단발과 번갈아 쓴다
+let firing   = false;          // 방아쇠를 당기고 있는가 (연발일 때 계속 나간다)
+const AK_CD_AUTO = 95;         // 연발 : 0.095초마다 한 발 (분당 약 630발)
+const AK_CD_SEMI = 200;        // 단발 : 한 번 누르면 한 발
 let aiming  = false;           // 오른쪽 버튼을 누르고 있는가
 let aimK    = 0;               // 조준 정도 0~1 (부드럽게 움직인다)
 const BASE_FOV = 72;
@@ -1796,15 +1803,26 @@ function drawHotbar(){
   const sig = have.map(i=>i.id+(i.id===equipId?'*':'')).join(',');
   if(elHotbar.dataset.sig !== sig){
     elHotbar.dataset.sig = sig;
-    elHotbar.innerHTML = have.map(i=>
+    elHotbar.innerHTML = have.map((i,n)=>
       `<button class="slot${i.id===equipId?' on':''}" data-item="${i.id}">
-         <span class="key">${i.key}</span><span class="ic">${i.ic}</span><span class="nm">${i.nm}</span>
+         <span class="key">${n+1}</span><span class="ic">${i.ic}</span><span class="nm">${i.nm}</span>
        </button>`).join('');
     elHotbar.querySelectorAll('.slot').forEach(b=>{
       b.addEventListener('click',e=>{ e.preventDefault(); Snd.resume(); equip(b.dataset.item); });
     });
   }
 }
+/* 지금 아이템창에서 몇 번째 칸인가 (없으면 0) */
+function slotOf(id){
+  const n = ITEMS.filter(i=>i.have()).findIndex(i=>i.id===id);
+  return n<0 ? 0 : n+1;
+}
+/* n 번째 칸의 도구를 든다 */
+function equipSlot(n){
+  const it = ITEMS.filter(i=>i.have())[n-1];
+  if(it) equip(it.id);
+}
+
 /* 들기 / 내리기 (같은 것을 다시 누르면 내린다) */
 function equip(id){
   if(paused || dead) return;
@@ -1817,7 +1835,7 @@ function equip(id){
   if(!off){ it.view.visible = true; }
   const ab = document.getElementById('atkBtn');
   if(ab) ab.style.display = (equipId && usingTouch) ? 'flex' : 'none';
-  aiming = false; reloadT = 0;
+  aiming = false; firing = false; reloadT = 0;
   if(!off && it.gun && S.ammo==null) S.ammo = AK_MAG;
   drawAmmo();
   Snd.play(off ? 'claySoft' : (id==='sword'?'metalStir':'stoneGet'), .9);
@@ -2619,7 +2637,7 @@ function supplyCrate(x,z,rotY,loot){
         drawHotbar();
         centerMsg('<h2>🔫 ？？？</h2>'+
           '<p>돌담 밖 상자 안에 <b>있을 리 없는 물건</b>이 들어 있었어요.</p>'+
-          '<p style="opacity:.8">아이템창 <b>4번</b> — 누르면 들고, 다시 누르면 내려요.</p>', 5200);
+          `<p style="opacity:.8">아이템창 <b>${slotOf('ak')}번</b> — 누르면 들고, 다시 누르면 내려요.</p>`, 5200);
         toast('🔫 AK-47 을(를) 찾았어요!');
         Buddy.cheer();
         Guide.say('🔫 <b>이건… 선사시대 물건이 아닌데?</b> 아무한테도 말하지 말자.', 5);
@@ -3687,7 +3705,7 @@ function knapGame(){
     document.getElementById('kdone').onclick=()=>{
       closeVeil(); S.c.tool++; refresh();
       centerMsg('<h2>🔨 도구 +1</h2><p>뗀석기를 손에 넣었어요!</p>'+
-        '<p style="font-size:14px;margin-top:6px">아이템창(<b>1</b>)에서 들고 휘두르면 멧돼지를 <b>5초 기절</b>시킬 수 있어요.</p>',3000);
+        `<p style="font-size:14px;margin-top:6px">아이템창(<b>${slotOf('tool')}</b>)에서 들고 휘두르면 멧돼지를 <b>5초 기절</b>시킬 수 있어요.</p>`,3000);
       completeSilent('knap');
     };
   }
@@ -3865,7 +3883,7 @@ function polishGame(){
       closeVeil();
       S.c.polish=(S.c.polish||0)+1; refresh();
       centerMsg('<h2>🪓 간석기 +1</h2><p>날이 매끄러운 돌도끼를 얻었어요!</p>'+
-        '<p style="font-size:14px;margin-top:6px">아이템창(<b>2</b>)에서 들면 멧돼지를 <b>5초 기절</b>시킬 수 있어요.</p>',3000);
+        `<p style="font-size:14px;margin-top:6px">아이템창(<b>${slotOf('polish')}</b>)에서 들면 멧돼지를 <b>5초 기절</b>시킬 수 있어요.</p>`,3000);
       completeSilent('polish');
     };
   }
@@ -4845,7 +4863,7 @@ function bronzeGame(){
       S.c.tool=(S.c.tool||0)+1; refresh();
       S.armed = true;
       centerMsg('<h2>⚔️ 비파형 동검 완성!</h2><p>구리 + 주석 → 청동</p>'+
-        '<p style="margin-top:8px">오른쪽 아래 <b>아이템창</b>'+(usingTouch?'':' 또는 <b>3</b> 키')+
+        '<p style="margin-top:8px">오른쪽 아래 <b>아이템창</b>'+(usingTouch?'':' 또는 <b>'+slotOf('sword')+'</b> 키')+
         '을 눌러 검을 <b>들었다 내렸다</b> 할 수 있어요.<br>'+
         '검을 든 채 <b>'+(usingTouch?'⚔️ 버튼':'클릭')+'</b>하면 거리 <b>10</b> 안의 멧돼지를 <b>물리칩니다!</b></p>',5200);
       completeSilent('sword');
@@ -4969,7 +4987,8 @@ function attack(){
   const it = equippedItem();
   if(!it || paused || dead) return;
   const now = performance.now();
-  if(now - atkAt < (it.cd || ATK_CD_MS)) return;
+  const cd = it.gun ? (autoFire ? AK_CD_AUTO : AK_CD_SEMI) : (it.cd || ATK_CD_MS);
+  if(now - atkAt < cd) return;
   if(it.gun){ shoot(it, now); return; }
   atkAt = now; swingT = 0.36;
   Snd.play(it.kill ? 'metalStir' : 'stoneMove', 1.0);
@@ -5007,10 +5026,23 @@ function drawAmmo(){
   elAmmo.classList.toggle('rld', reloadT>0);
   elAmmo.classList.toggle('empty', reloadT<=0 && n===0);
   elAmmo.classList.toggle('low', reloadT<=0 && n>0 && n<=8);
+  const mode = `<span class="fm">${autoFire?'연발':'단발'}</span>`;
   elAmmo.innerHTML = reloadT>0
-    ? '<span class="n">장전 중…</span>'
-    : `<span class="n">${n}</span><span class="m">/ ${AK_MAG}</span>`;
+    ? mode + '<span class="n">장전 중…</span>'
+    : mode + `<span class="n">${n}</span><span class="m">/ ${AK_MAG}</span>`;
 }
+/* 연발 ↔ 단발 (V 키) */
+function toggleFireMode(){
+  if(paused || dead) return;
+  const it = equippedItem();
+  if(!it || !it.gun){ return; }
+  autoFire = !autoFire;
+  firing = false;
+  Snd.play('gunCock', .7);
+  toast(autoFire ? '🔫 연발 — 누르고 있으면 계속 나가요' : '🔫 단발 — 한 번 누르면 한 발');
+  drawAmmo();
+}
+
 /* 장전 (R 키) */
 function reload(){
   if(paused || dead || equipId!=='ak') return;
@@ -5045,6 +5077,10 @@ function shoot(it, now){
   atkAt = now; swingT = 0.16;
   Snd.play('gunShot', 1.0);
   camShake = Math.max(camShake, aiming ? .34 : .60);
+  /* 반동 : 쏠수록 총구가 들린다 (연발이 더 심하다) */
+  const kick = (autoFire ? .011 : .005) * (aiming ? .55 : 1);
+  pitch = Math.min(1.2, pitch + kick);
+  yaw  += (Math.random()-.5) * kick * .9;
 
   /* 총구 섬광 */
   const fl = it.view.userData && it.view.userData.flash;
@@ -5158,7 +5194,7 @@ function netRespawn(){
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60);
   equipId = null; swingT = 0;
-  aiming = false; aimK = 0; reloadT = 0;
+  aiming = false; aimK = 0; reloadT = 0; firing = false;
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
   hideCenter(); elHurt.style.opacity='0'; fade(0);
   Snd.resume(); ambRamp = 1.2;
@@ -5214,7 +5250,7 @@ function startEra(){
   if(S.eraIndex>0) S.c.food = (S.foodCarry!=null ? S.foodCarry : 4);   // 앞 시대에서 가져온 식량
   S.hunger = 100; S.armed = false; hungerMul = 1; hungerWarn = 0; atkAt = -1e9;
   equipId = null; swingT = 0;
-  aiming = false; aimK = 0; reloadT = 0;
+  aiming = false; aimK = 0; reloadT = 0; firing = false;
   if(S.ak) S.ammo = AK_MAG;                       // 새 시대에서는 탄창을 채워 준다
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
   drawAmmo();
@@ -5287,11 +5323,11 @@ addEventListener('keydown',e=>{
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=true;
   if(e.code==='KeyE'||e.code==='Space'){ e.preventDefault(); tryInteract(); }
   if(e.code==='KeyF'){ e.preventDefault(); eat(); }
-  if(e.code==='Digit1'||e.code==='Numpad1'){ e.preventDefault(); equip('tool'); }
-  if(e.code==='Digit2'||e.code==='Numpad2'){ e.preventDefault(); equip('polish'); }
-  if(e.code==='Digit3'||e.code==='Numpad3'){ e.preventDefault(); equip('sword'); }
-  if(e.code==='Digit4'||e.code==='Numpad4'){ e.preventDefault(); equip('ak'); }
-  if(e.code==='KeyR'){ e.preventDefault(); reload(); } });
+  for(let n=1;n<=4;n++){
+    if(e.code==='Digit'+n || e.code==='Numpad'+n){ e.preventDefault(); equipSlot(n); }
+  }
+  if(e.code==='KeyR'){ e.preventDefault(); reload(); }
+  if(e.code==='KeyV'){ e.preventDefault(); toggleFireMode(); } });
 addEventListener('keyup',e=>{ keys[e.code]=false;
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=false; });
 addEventListener('blur',()=>{ running=false; for(const k in keys) keys[k]=false; });
@@ -5377,6 +5413,7 @@ addEventListener('mouseup',e=>{
 document.addEventListener('mousedown',e=>{
   if(document.pointerLockElement===cv && e.button===0){
     if(equipId) attack(); else tryInteract();
+    firing = true;
   }
   /* 오른쪽 버튼 : 조준 */
   if(e.button===2 && !usingTouch){
@@ -5384,8 +5421,8 @@ document.addEventListener('mousedown',e=>{
     if(it && it.gun && !paused && !dead){ e.preventDefault(); aiming = true; }
   }
 });
-addEventListener('mouseup',e=>{ if(e.button===2) aiming = false; });
-addEventListener('blur',()=>{ aiming = false; });
+addEventListener('mouseup',e=>{ if(e.button===2) aiming = false; if(e.button===0) firing = false; });
+addEventListener('blur',()=>{ aiming = false; firing = false; });
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('pointerlockchange',()=>{
   if(usingTouch) return;
@@ -5475,9 +5512,14 @@ runBtn.addEventListener('pointerleave',runOff);
 
 /* ⚔️ 공격 버튼 (동검을 들고 있을 때만 나타난다) */
 const atkBtn=document.getElementById('atkBtn');
-atkBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); Snd.resume(); attack(); });
+atkBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); Snd.resume(); attack(); firing = true; });
+['pointerup','pointercancel','pointerleave'].forEach(ev=>
+  atkBtn.addEventListener(ev, ()=>{ firing = false; }));
 /* 배고픔 게이지를 눌러도 먹는다 */
 elHunger.addEventListener('click',e=>{ e.preventDefault(); Snd.resume(); eat(); });
+
+/* 탄약 칸을 누르면 연발 ↔ 단발 */
+elAmmo.addEventListener('click', e=>{ e.preventDefault(); Snd.resume(); toggleFireMode(); });
 
 /* 태블릿 : 조준 · 장전 버튼 */
 const aimBtn=document.getElementById('aimBtn'), rldBtn=document.getElementById('rldBtn');
@@ -5624,6 +5666,11 @@ function tick(){
     aimK = nk;
     camera.fov = BASE_FOV - aimK*24;
     camera.updateProjectionMatrix();
+  }
+  /* 연발 : 방아쇠를 당기고 있는 동안 계속 나간다 */
+  if(firing){
+    if(paused || dead || !(it0 && it0.gun)) firing = false;
+    else if(autoFire) attack();
   }
   updateReload(dt);
   updateHand(dt, t);
