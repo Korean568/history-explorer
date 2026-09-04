@@ -2370,6 +2370,53 @@ function hideItem(x,z){
   h2.position.y=.15; h2.scale.z=.7; g.add(h2);
   g.position.set(x,0,z); g.rotation.y=rr(0,TAU); world.add(g); return g;
 }
+/* 나무 상자 : 한 번만 열 수 있고, 안에 식량이 들어 있다 */
+function supplyCrate(x,z,rotY){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,.9,1.1),M(0x9a6b3f));
+  body.position.y=.45; g.add(body);
+  /* 앞뒤 나무판 테두리 */
+  [.56,-.56].forEach(pz=>{
+    const b=new THREE.Mesh(new THREE.BoxGeometry(1.56,.16,.06),M(0x7a5231));
+    b.position.set(0,.26,pz); g.add(b);
+    const b2=b.clone(); b2.position.y=.7; g.add(b2);
+  });
+  /* 양옆 기둥 */
+  [-.72,.72].forEach(px=>{
+    const b=new THREE.Mesh(new THREE.BoxGeometry(.08,.9,1.16),M(0x7a5231));
+    b.position.set(px,.45,0); g.add(b);
+  });
+  /* 뚜껑 : 뒤쪽 모서리를 축으로 열린다 */
+  const pivot=new THREE.Group(); pivot.position.set(0,.9,-.55); g.add(pivot);
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.56,.2,1.16),M(0xb0855a));
+  lid.position.set(0,.1,.55); pivot.add(lid);
+  const knob=new THREE.Mesh(new THREE.BoxGeometry(.34,.13,.14),M(0x6b4a2a));
+  knob.position.set(0,.2,1.02); pivot.add(knob);
+
+  g.position.set(x,0,z); g.rotation.y=rotY||0; world.add(g);
+  colliders.push({x,z,r:1.15});
+  glow(g,0x2a1c0c);
+
+  /* 열리는 움직임 */
+  let opened=false, k=0;
+  animated.push(()=>{ if(opened && k<1){ k=Math.min(1,k+.06); pivot.rotation.x=-k*1.35; } });
+  const openIt=()=>{ opened=true; Snd.play('woodGet'); pickFx(x,1.45,z,0xf6d05a); };
+
+  const it={
+    nid:nidSeq++, net:'pick', x, z, range:3.4, tag:'food',
+    label:()=>'📦 상자 열기', ready:()=>true,
+    /* 다른 사람이 먼저 열었을 때 : 뚜껑만 열린다 */
+    ghost(){ openIt(); removeIt(it); },
+    act(){
+      openIt(); removeIt(it);
+      S.c.food += 2;
+      if(S.eraIndex===0) checkPaleo1('📦 상자에서 식량을 찾았어요!');
+      else { refresh(); toast(`📦 상자에서 식량 2개를 찾았어요!`); }
+    }
+  };
+  interactables.push(it);
+  return g;
+}
 function siteMarker(x,z,col){
   const g=new THREE.Group();
   const ring=new THREE.Mesh(new THREE.RingGeometry(2.2,2.9,18),new THREE.MeshBasicMaterial({color:col||0xf2c14e,side:THREE.DoubleSide,transparent:true,opacity:.7}));
@@ -2765,6 +2812,8 @@ function buildPaleo(){
   cave(40,-30);
   campfireRing(0,36,{needWood:true});
   rock(3.4,37.2,.5,0x8d8378); rock(-3,35,.45,0x8d8378);
+  /* 야영지 옆 나무 상자 */
+  supplyCrate(-4.6,40.2,.5);
 
   /* =============== 밤 대비 : 뗀석기로 벨 수 있는 나무 =============== */
   [[-26,48],[22,44],[-34,30],[32,36],[-9,55],[13,56],[38,50],[-20,60]]
