@@ -215,6 +215,30 @@
     text-shadow:0 2px 5px rgba(0,0,0,.5);}
   #atkBtn span{font-size:11px;font-weight:800;}
   #atkBtn:active{transform:scale(1.08);background:rgba(242,193,78,.55);}
+
+  /* 조준 · 장전 버튼 (태블릿) */
+  #aimBtn,#rldBtn{position:absolute;right:110px;width:62px;height:62px;border-radius:50%;
+    display:none;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    pointer-events:auto;border:4px solid rgba(255,255,255,.55);color:#fff;font-family:inherit;
+    font-size:20px;line-height:1;text-shadow:0 2px 5px rgba(0,0,0,.5);
+    background:rgba(60,70,90,.34);}
+  #aimBtn{bottom:calc(232px + env(safe-area-inset-bottom));}
+  #rldBtn{bottom:calc(158px + env(safe-area-inset-bottom));}
+  #aimBtn span,#rldBtn span{font-size:10px;font-weight:800;}
+  #aimBtn.on{background:rgba(242,193,78,.55);}
+  #rldBtn:active{transform:scale(1.08);background:rgba(242,193,78,.55);}
+
+  /* 탄약 */
+  #ammo{position:absolute;right:16px;bottom:calc(108px + env(safe-area-inset-bottom));
+    display:none;align-items:baseline;gap:3px;padding:4px 12px;border-radius:12px;
+    background:rgba(43,33,24,.80);border:2.5px solid rgba(255,255,255,.35);
+    font-weight:800;color:#fff;letter-spacing:.5px;}
+  #ammo .n{font-size:22px;line-height:1;}
+  #ammo .m{font-size:12px;opacity:.7;}
+  #ammo.low .n{color:#ffb4a8;}
+  #ammo.empty .n{color:#ff7a68;}
+  #ammo.rld{color:#ffe08a;}
+  @media (max-width:620px){ #ammo{bottom:calc(104px + env(safe-area-inset-bottom));} }
   #sndBtn{position:absolute;top:calc(12px + env(safe-area-inset-top));left:200px;
     width:42px;height:42px;border-radius:12px;border:3px solid var(--bark);background:rgba(255,255,255,.9);
     font-size:17px;line-height:1;padding:0;pointer-events:auto;cursor:pointer;font-family:inherit;}
@@ -553,6 +577,9 @@
   <div id="joy"><i></i></div>
   <button id="runBtn">🏃<span>달리기</span></button>
   <button id="atkBtn">⚔️<span>공격</span></button>
+  <button id="aimBtn">🎯<span>조준</span></button>
+  <button id="rldBtn">🔄<span>장전</span></button>
+  <div id="ammo"><span class="n">30</span><span class="m">/ 30</span></div>
   <div id="hotbar"></div>
   <button id="act">채집</button>
   <div id="toast"></div>
@@ -600,7 +627,8 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elGDist=$('#gDist'), elGNav=$('#gNav'), elGAvatar=$('#gAvatar'),
       elHunger=$('#hungerWrap'), elHungerBar=$('#hungerBar'), elHungerTxt=$('#hungerTxt'),
       elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party'),
-      elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn');
+      elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn'),
+      elAmmo=$('#ammo');
 
 const elCenter=document.getElementById('center'), elFade=document.getElementById('fade');
 let centerTimer=null;
@@ -1153,7 +1181,7 @@ function updateClockHud(){
 }
 
 /* 모닥불에 실제로 불이 붙어 있는가 */
-function fireLit(){ return firePits.some(f=>f.lit()); }
+function fireLit(){ return firePits.some(f=>!f.quiet && f.lit()); }
 
 /* 해질녘 : 밤을 준비하라는 예고 */
 function duskWarn(){
@@ -1531,6 +1559,13 @@ const Buddy = (function(){
    ========================================================= */
 let equipId = null;            // 지금 들고 있는 도구 id (없으면 null)
 let swingT = 0;                // 휘두르는 중
+/* ---- AK-47 : 탄창과 조준 ---- */
+const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
+const AK_RELOAD = 1.9;         // 장전에 걸리는 시간(초)
+let reloadT = 0;               // 남은 장전 시간
+let aiming  = false;           // 오른쪽 버튼을 누르고 있는가
+let aimK    = 0;               // 조준 정도 0~1 (부드럽게 움직인다)
+const BASE_FOV = 72;
 const STUN_SEC = 5;            // 돌도구로 때렸을 때 기절 시간
 
 /* 물방울 모양 날을 만드는 helper */
@@ -1654,8 +1689,8 @@ function bulletTracer(x1,y1,z1,x2,y2,z2){
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
   world.add(m);
   let life=0;
-  const f=(t,dt)=>{ life+=dt; m.material.opacity=Math.max(0,.85-life*8);
-                    if(life>.13){ world.remove(m); removeAnim(f); } };
+  const f=(t,dt)=>{ life+=dt; m.material.opacity=Math.max(0,.9-life*4.6);
+                    if(life>.20){ world.remove(m); removeAnim(f); } };
   animated.push(f);
 }
 
@@ -1706,6 +1741,7 @@ const ITEMS = [
   { id:'ak', key:'4', ic:'🔫', nm:'AK-47', range:45, kill:true, gun:true, cd:180,
     have:()=> !!S.ak,
     pos:[.175,-.230,-.500], rot:[.02,-.045,.02],
+    aim:[0,-.0775,-.620],                       // 조준할 때 : 가늠자를 화면 한가운데로
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } }
 ];
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
@@ -1725,9 +1761,20 @@ function updateHand(dt, t){
     /* 총 : 뒤로 밀리고 총구가 들리는 반동 */
     swingT = Math.max(0, swingT-dt);
     const e = swingT>0 ? Math.sin((swingT/0.16)*Math.PI*0.5) : 0;
-    const bob = Math.sin(t*1.5)*.006 + bobLevel*Math.sin(stepPhase*TAU)*.014;
-    it.view.position.set(P[0]+e*.020, P[1]+bob-e*.006, P[2]+e*.075);
-    it.view.rotation.set(R[0]+e*.26, R[1], R[2]+bob*.5);
+    const bob = (Math.sin(t*1.5)*.006 + bobLevel*Math.sin(stepPhase*TAU)*.014) * (1-aimK*.8);
+    /* 조준하면 가늠자와 가늠쇠가 화면 한가운데에 오도록 총을 가운데로 든다 */
+    const A = it.aim, k = aimK;
+    const px = P[0]+(A[0]-P[0])*k, py = P[1]+(A[1]-P[1])*k, pz = P[2]+(A[2]-P[2])*k;
+    const rx = R[0]+(0-R[0])*k,    ry = R[1]+(0-R[1])*k,    rz = R[2]+(0-R[2])*k;
+    /* 장전 : 총을 아래로 내렸다가 다시 올린다 */
+    let dip = 0, tilt = 0;
+    if(reloadT>0){
+      const q = 1 - reloadT/AK_RELOAD;                 // 0 → 1
+      const w = Math.sin(Math.min(1,q*1.15)*Math.PI);  // 가운데서 가장 많이 내려간다
+      dip = w*.20; tilt = w*.55;
+    }
+    it.view.position.set(px+e*.020*(1-k*.6), py+bob-e*.006-dip, pz+e*.075);
+    it.view.rotation.set(rx+e*.26+tilt, ry-tilt*.5, rz+bob*.5);
     return;
   }
   if(swingT>0){
@@ -1770,6 +1817,9 @@ function equip(id){
   if(!off){ it.view.visible = true; }
   const ab = document.getElementById('atkBtn');
   if(ab) ab.style.display = (equipId && usingTouch) ? 'flex' : 'none';
+  aiming = false; reloadT = 0;
+  if(!off && it.gun && S.ammo==null) S.ammo = AK_MAG;
+  drawAmmo();
   Snd.play(off ? 'claySoft' : (id==='sword'?'metalStir':'stoneGet'), .9);
   toast(off ? `${it.ic} ${josa(it.nm,'을','를')} 내렸어요`
             : `${it.ic} ${josa(it.nm,'을','를')} 들었어요 — ${usingTouch?'⚔️ 버튼':'클릭'}으로 공격!`);
@@ -2563,7 +2613,7 @@ function supplyCrate(x,z,rotY,loot){
     act(){
       openIt(); removeIt(it);
       if(ak){
-        S.ak = true;
+        S.ak = true; S.ammo = AK_MAG;
         Snd.play('gunCock', 1.0);
         setTimeout(()=>Snd.play('levelUp',.8), 220);
         drawHotbar();
@@ -2589,12 +2639,14 @@ function supplyCrate(x,z,rotY,loot){
    (시대를 만든 다음 맨 마지막에 놓아서 다른 배치를 건드리지 않습니다)
    --------------------------------------------------------- */
 function easterEgg(){
-  if(S.ak) return;                       // 이미 찾았으면 다시 놓지 않는다
   const EX=-62, EZ=-62;
   const R=[[5.6,0],[4.0,4.0],[0,5.6],[-4.0,4.0],[-5.6,0],[-4.0,-4.0],[0,-5.6],[4.0,-4.0]];
   R.forEach((q,i)=>{ if(i%3===2) return;                 // 드나들 틈을 남긴다
     rock(EX+q[0], EZ+q[1], 1.15+(i%3)*.28, 0x857b70); });
-  supplyCrate(EX,EZ,-.35,'ak');
+  /* 이 돌무리 안은 멧돼지가 들어오지 못한다 (모닥불과 같은 효과).
+     quiet 이므로 '오늘 밤 모닥불이 켜졌나' 판정에는 끼지 않는다. */
+  firePits.push({x:EX, z:EZ, lit:()=>true, quiet:true});
+  if(!S.ak) supplyCrate(EX,EZ,-.35,'ak');   // 이미 찾았으면 상자는 놓지 않는다
 }
 function siteMarker(x,z,col){
   const g=new THREE.Group();
@@ -4943,11 +4995,56 @@ function attack(){
     }
   } else Snd.throttle('stoneHit', 300, .35);
 }
+/* 남은 총알을 화면에 보여 준다 */
+function drawAmmo(){
+  const on = (equipId==='ak');
+  elAmmo.style.display = on ? 'flex' : 'none';
+  const rb = document.getElementById('rldBtn'), ab2 = document.getElementById('aimBtn');
+  if(rb) rb.style.display = (on && usingTouch) ? 'flex' : 'none';
+  if(ab2) ab2.style.display = (on && usingTouch) ? 'flex' : 'none';
+  if(!on) return;
+  const n = S.ammo|0;
+  elAmmo.classList.toggle('rld', reloadT>0);
+  elAmmo.classList.toggle('empty', reloadT<=0 && n===0);
+  elAmmo.classList.toggle('low', reloadT<=0 && n>0 && n<=8);
+  elAmmo.innerHTML = reloadT>0
+    ? '<span class="n">장전 중…</span>'
+    : `<span class="n">${n}</span><span class="m">/ ${AK_MAG}</span>`;
+}
+/* 장전 (R 키) */
+function reload(){
+  if(paused || dead || equipId!=='ak') return;
+  if(reloadT>0) return;
+  if((S.ammo|0) >= AK_MAG){ toast('🔫 탄창이 이미 가득 찼어요'); return; }
+  reloadT = AK_RELOAD;
+  Snd.play('gunCock', 1.0);
+  toast('🔄 장전하는 중…');
+  drawAmmo();
+}
+/* 장전 시간이 흐른다 */
+function updateReload(dt){
+  if(reloadT<=0) return;
+  reloadT = Math.max(0, reloadT - dt);
+  if(reloadT===0){
+    S.ammo = AK_MAG;
+    Snd.play('gunCock', 1.0);
+    toast('🔫 장전 완료 — 30발');
+  }
+  drawAmmo();
+}
+
 /* 총 쏘기 : 화면 가운데를 향해 한 발 */
 function shoot(it, now){
+  if(reloadT>0) return;                       // 장전하는 동안에는 못 쏜다
+  if((S.ammo|0) <= 0){
+    Snd.throttle('claySoft', 260, .8);
+    toast('🔫 탄창이 비었어요 — ' + josa(usingTouch?'🔄 버튼':'R 키','으로','로') + ' 장전하세요');
+    return;
+  }
+  S.ammo--; drawAmmo();
   atkAt = now; swingT = 0.16;
   Snd.play('gunShot', 1.0);
-  camShake = Math.max(camShake, .60);
+  camShake = Math.max(camShake, aiming ? .34 : .60);
 
   /* 총구 섬광 */
   const fl = it.view.userData && it.view.userData.flash;
@@ -4959,28 +5056,45 @@ function shoot(it, now){
     fl.userData.timer = setTimeout(()=>{ fl.visible=false; }, 55);
   }
 
-  /* 조준선 : 카메라가 보는 쪽 */
+  /* 조준선 : 카메라가 보는 쪽.
+     조준하면 멀리·정확하게, 그냥 쏘면 가깝고 빗나가기도 한다. */
+  const ads   = aimK > .6;
+  const range = ads ? it.range : it.range*0.55;
+  const cone  = ads ? 0.965 : 0.90;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   let best = -1, bd = 1e9;
   for(let i=0;i<Boars.list.length;i++){
     const b = Boars.list[i];
     const dx = b.x-player.x, dz = b.z-player.z, d = Math.hypot(dx,dz);
-    if(d > it.range || d < .001) continue;
-    if((dx*fx + dz*fz)/d < 0.90) continue;      // 화면 가운데 약 ±25도 안
+    if(d > range || d < .001) continue;
+    if((dx*fx + dz*fz)/d < cone) continue;
     if(d < bd){ bd = d; best = i; }
   }
+  if(best >= 0 && !ads && Math.random() < 0.3) best = -1;   // 견착 없이 쏘면 가끔 빗나간다
 
-  /* 총알 자국 */
-  const mx = player.x + fx*.9, mz = player.z + fz*.9, my = 1.45;
+  /* 총알은 (눈이 아니라) 총구에서 나간다 */
+  const mv = new THREE.Vector3();
+  const fl2 = it.view.userData && it.view.userData.flash;
+  if(fl2){
+    /* 지금 서 있는 자리·보는 방향으로 맞춘 뒤 총구의 실제 위치를 읽는다 */
+    camera.position.set(player.x, 1.72, player.z);
+    camera.rotation.set(pitch, yaw, 0);
+    camera.updateMatrixWorld(true);
+    fl2.getWorldPosition(mv);
+  } else mv.set(player.x, 1.45, player.z);
+
   if(best >= 0){
     const b = Boars.list[best];
-    bulletTracer(mx,my,mz, b.x, .85, b.z);
+    bulletTracer(mv.x,mv.y,mv.z, b.x, .85, b.z);
     Boars.kill(best);
     if(Net.on && !Net.host) Net.send({t:'fx', kill:[b.nid], stun:[]});
     Snd.play('boarHit', .8);
     toast('🔫 명중!');
   } else {
-    bulletTracer(mx,my,mz, player.x+fx*it.range, 1.1, player.z+fz*it.range);
+    const sp = ads ? .012 : .05;                            // 빗나가는 정도
+    const ex = player.x + (fx + (Math.random()-.5)*sp)*range;
+    const ez = player.z + (fz + (Math.random()-.5)*sp)*range;
+    bulletTracer(mv.x,mv.y,mv.z, ex, 1.1 + (Math.random()-.5)*.6, ez);
   }
 }
 
@@ -5044,6 +5158,7 @@ function netRespawn(){
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60);
   equipId = null; swingT = 0;
+  aiming = false; aimK = 0; reloadT = 0;
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
   hideCenter(); elHurt.style.opacity='0'; fade(0);
   Snd.resume(); ambRamp = 1.2;
@@ -5099,7 +5214,10 @@ function startEra(){
   if(S.eraIndex>0) S.c.food = (S.foodCarry!=null ? S.foodCarry : 4);   // 앞 시대에서 가져온 식량
   S.hunger = 100; S.armed = false; hungerMul = 1; hungerWarn = 0; atkAt = -1e9;
   equipId = null; swingT = 0;
+  aiming = false; aimK = 0; reloadT = 0;
+  if(S.ak) S.ammo = AK_MAG;                       // 새 시대에서는 탄창을 채워 준다
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
+  drawAmmo();
   elHotbar.dataset.sig = '';
   clearWorld();
   eraSky.set(era.sky);
@@ -5172,7 +5290,8 @@ addEventListener('keydown',e=>{
   if(e.code==='Digit1'||e.code==='Numpad1'){ e.preventDefault(); equip('tool'); }
   if(e.code==='Digit2'||e.code==='Numpad2'){ e.preventDefault(); equip('polish'); }
   if(e.code==='Digit3'||e.code==='Numpad3'){ e.preventDefault(); equip('sword'); }
-  if(e.code==='Digit4'||e.code==='Numpad4'){ e.preventDefault(); equip('ak'); } });
+  if(e.code==='Digit4'||e.code==='Numpad4'){ e.preventDefault(); equip('ak'); }
+  if(e.code==='KeyR'){ e.preventDefault(); reload(); } });
 addEventListener('keyup',e=>{ keys[e.code]=false;
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=false; });
 addEventListener('blur',()=>{ running=false; for(const k in keys) keys[k]=false; });
@@ -5230,8 +5349,9 @@ document.addEventListener('mousemove',e=>{
   if(e.movementX || e.movementY) setInputMode(false);
   if(dragMode) return;
   if(document.pointerLockElement===cv){
-    yaw -= e.movementX*0.0024;
-    pitch = Math.max(-1.2,Math.min(1.2, pitch - e.movementY*0.0024));
+    const sens = 0.0024*(1-aimK*0.45);          // 조준하면 천천히 돌아간다
+    yaw -= e.movementX*sens;
+    pitch = Math.max(-1.2,Math.min(1.2, pitch - e.movementY*sens));
   } else if(dragLook){
     yaw -= (e.clientX-dragLook.x)*0.005;
     pitch = Math.max(-1.2,Math.min(1.2, pitch - (e.clientY-dragLook.y)*0.005));
@@ -5258,7 +5378,15 @@ document.addEventListener('mousedown',e=>{
   if(document.pointerLockElement===cv && e.button===0){
     if(equipId) attack(); else tryInteract();
   }
+  /* 오른쪽 버튼 : 조준 */
+  if(e.button===2 && !usingTouch){
+    const it=equippedItem();
+    if(it && it.gun && !paused && !dead){ e.preventDefault(); aiming = true; }
+  }
 });
+addEventListener('mouseup',e=>{ if(e.button===2) aiming = false; });
+addEventListener('blur',()=>{ aiming = false; });
+cv.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('pointerlockchange',()=>{
   if(usingTouch) return;
   elHint.textContent = pcHint();
@@ -5350,6 +5478,14 @@ const atkBtn=document.getElementById('atkBtn');
 atkBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); Snd.resume(); attack(); });
 /* 배고픔 게이지를 눌러도 먹는다 */
 elHunger.addEventListener('click',e=>{ e.preventDefault(); Snd.resume(); eat(); });
+
+/* 태블릿 : 조준 · 장전 버튼 */
+const aimBtn=document.getElementById('aimBtn'), rldBtn=document.getElementById('rldBtn');
+aimBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); Snd.resume();
+  aiming=!aiming; aimBtn.classList.toggle('on', aiming); });
+rldBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); Snd.resume(); reload(); });
+aimBtn.addEventListener('contextmenu',e=>e.preventDefault());
+rldBtn.addEventListener('contextmenu',e=>e.preventDefault());
 runBtn.addEventListener('contextmenu',e=>e.preventDefault());
 
 /* 🔊 소리 켜기/끄기 */
@@ -5479,6 +5615,17 @@ function tick(){
   Buddy.update(t, dt);
   Guide.update(dt);
   Net.update(dt, t);
+  /* 조준 : 화각이 좁아지면서 멀리 있는 것이 커 보인다 */
+  const it0 = equippedItem();
+  if(!(it0 && it0.gun)) aiming = false;
+  const aimTarget = (aiming && !paused && !dead && reloadT<=0) ? 1 : 0;
+  const nk = aimK + (aimTarget-aimK)*Math.min(1, dt*11);
+  if(Math.abs(nk-aimK) > 0.0005){
+    aimK = nk;
+    camera.fov = BASE_FOV - aimK*24;
+    camera.updateProjectionMatrix();
+  }
+  updateReload(dt);
   updateHand(dt, t);
   updateHunger(dt);
 
