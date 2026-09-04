@@ -1687,6 +1687,19 @@ function akModel(){
   return g;
 }
 
+/* 총알이 지나갈 길이 큰 바위·나무에 막혀 있는가 */
+function losBlocked(ax,az,bx,bz){
+  const dx=bx-ax, dz=bz-az, L2=dx*dx+dz*dz;
+  if(L2 < 0.04) return false;
+  for(const o of colliders){
+    if(o.r < 1.0) continue;                      // 작은 것은 총알이 지나간다
+    const t = ((o.x-ax)*dx + (o.z-az)*dz) / L2;
+    if(t <= 0.03 || t >= 0.97) continue;         // 둘 사이에 있는 것만
+    if(Math.hypot(o.x-(ax+dx*t), o.z-(az+dz*t)) < o.r*0.7) return true;
+  }
+  return false;
+}
+
 /* 총알이 지나간 자리 */
 function bulletTracer(x1,y1,z1,x2,y2,z2){
   const dir=new THREE.Vector3(x2-x1,y2-y1,z2-z1), len=dir.length();
@@ -5098,32 +5111,41 @@ function shoot(it, now){
     fl.userData.timer = setTimeout(()=>{ fl.visible=false; }, 55);
   }
 
-  /* 조준선 : 카메라가 보는 쪽.
-     조준하면 멀리·정확하게, 그냥 쏘면 가깝고 빗나가기도 한다. */
-  const ads   = aimK > .6;
-  const range = ads ? it.range : it.range*0.55;
-  const cone  = ads ? 0.965 : 0.90;
-  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  /* 지금 서 있는 자리·보는 방향으로 카메라를 맞춘다.
+     (총구 위치와 조준선을 정확히 읽기 위해서) */
+  camera.position.set(player.x, 1.72, player.z);
+  camera.rotation.set(pitch, yaw, 0);
+  camera.updateMatrixWorld(true);
+
+  /* 총알은 눈이 아니라 총구에서 나간다 */
+  const mv = new THREE.Vector3();
+  const fl2 = it.view.userData && it.view.userData.flash;
+  if(fl2) fl2.getWorldPosition(mv); else mv.set(player.x, 1.45, player.z);
+
+  /* 조준선 : 화면 한가운데가 향하는 방향 (위아래까지 그대로) */
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  const eye = new THREE.Vector3(player.x, 1.72, player.z);
+
+  const ads    = aimK > .6;
+  const range  = ads ? it.range : it.range*0.55;
+  const spread = ads ? 0.016 : 0.078;      // 총이 흔들리는 정도(라디안) : 약 1도 / 4.5도
+  const v = new THREE.Vector3();
   let best = -1, bd = 1e9;
   for(let i=0;i<Boars.list.length;i++){
     const b = Boars.list[i];
-    const dx = b.x-player.x, dz = b.z-player.z, d = Math.hypot(dx,dz);
+    v.set(b.x-eye.x, 0.85-eye.y, b.z-eye.z);
+    const d = v.length();
     if(d > range || d < .001) continue;
-    if((dx*fx + dz*fz)/d < cone) continue;
+    v.divideScalar(d);
+    /* 화면 가운데에서 벗어난 각도가, 멧돼지가 차지하는 각도 안에 들어와야 맞는다 */
+    const off  = Math.acos(Math.max(-1, Math.min(1, v.dot(fwd))));
+    const half = Math.atan2(0.75, d) + spread;
+    if(off > half) continue;
+    if(losBlocked(eye.x, eye.z, b.x, b.z)) continue;   // 바위·나무 뒤는 못 맞힌다
     if(d < bd){ bd = d; best = i; }
   }
-  if(best >= 0 && !ads && Math.random() < 0.3) best = -1;   // 견착 없이 쏘면 가끔 빗나간다
-
-  /* 총알은 (눈이 아니라) 총구에서 나간다 */
-  const mv = new THREE.Vector3();
-  const fl2 = it.view.userData && it.view.userData.flash;
-  if(fl2){
-    /* 지금 서 있는 자리·보는 방향으로 맞춘 뒤 총구의 실제 위치를 읽는다 */
-    camera.position.set(player.x, 1.72, player.z);
-    camera.rotation.set(pitch, yaw, 0);
-    camera.updateMatrixWorld(true);
-    fl2.getWorldPosition(mv);
-  } else mv.set(player.x, 1.45, player.z);
+  if(best >= 0 && !ads && Math.random() < 0.25) best = -1;  // 견착 없이 쏘면 가끔 빗나간다
 
   if(best >= 0){
     const b = Boars.list[best];
@@ -5133,10 +5155,12 @@ function shoot(it, now){
     Snd.play('boarHit', .8);
     toast('🔫 명중!');
   } else {
-    const sp = ads ? .012 : .05;                            // 빗나가는 정도
-    const ex = player.x + (fx + (Math.random()-.5)*sp)*range;
-    const ez = player.z + (fz + (Math.random()-.5)*sp)*range;
-    bulletTracer(mv.x,mv.y,mv.z, ex, 1.1 + (Math.random()-.5)*.6, ez);
+    /* 빗나간 총알도 보고 있는 쪽으로 날아간다 */
+    const e2 = eye.clone().addScaledVector(fwd, range);
+    e2.x += (Math.random()-.5)*range*spread*2;
+    e2.y += (Math.random()-.5)*range*spread*2;
+    e2.z += (Math.random()-.5)*range*spread*2;
+    bulletTracer(mv.x,mv.y,mv.z, e2.x, Math.max(.2,e2.y), e2.z);
   }
 }
 
