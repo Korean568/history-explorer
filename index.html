@@ -579,9 +579,12 @@ function rnd(){ seed = (seed*1664525 + 1013904223) % 4294967296; return seed/429
 function rr(a,b){ return a + rnd()*(b-a); }
 const M = (c)=> new THREE.MeshLambertMaterial({color:c, flatShading:true});
 const TAU = Math.PI*2;
-/* 받침 여부에 따라 조사를 골라 준다 : 뗀석기를 / 비파형 동검을 */
+/* 받침 여부에 따라 조사를 골라 준다 : 뗀석기를 / 비파형 동검을 / AK-47을 */
 function josa(w, withJong, noJong){
-  const c = w.charCodeAt(w.length-1);
+  const last = w[w.length-1], c = w.charCodeAt(w.length-1);
+  /* 숫자로 끝나면 읽는 소리로 따진다 : 영 일 삼 육 칠 팔 은 받침이 있다 */
+  if(last>=String.fromCharCode(48) && last<=String.fromCharCode(57))
+    return w + ('013678'.indexOf(last)>=0 ? withJong : noJong);
   const jong = (c>=0xAC00 && c<=0xD7A3) && ((c-0xAC00)%28 !== 0);
   return w + (jong ? withJong : noJong);
 }
@@ -658,7 +661,10 @@ const SOUNDS = {
   boarHit:       { url:null, vol:0.70 },
   nightFall:     { url:null, vol:0.45 },
   dayBreak:      { url:null, vol:0.45 },
-  owl:           { url:null, vol:0.28 }
+  owl:           { url:null, vol:0.28 },
+  /* 이스터에그 */
+  gunShot:       { url:null, vol:0.55 },
+  gunCock:       { url:null, vol:0.40 }
 };
 
 /* =========================================================
@@ -789,7 +795,15 @@ const Snd = (function(){
     dayBreak:(v)=>{ [523,659,784,1047].forEach((f,i)=>tone({type:'sine',freq:f,dur:.8,vol:.11*v,delay:i*.17}));
                     burst({type:'highpass',freq:4200,vol:.05*v,dur:.7,delay:.3}); },
     owl:(v)=>{ tone({type:'sine',freq:420,to:360,dur:.30,vol:.13*v});
-               tone({type:'sine',freq:400,to:330,dur:.38,vol:.11*v,delay:.42}); }
+               tone({type:'sine',freq:400,to:330,dur:.38,vol:.11*v,delay:.42}); },
+    /* ---- 이스터에그 : 총 ---- */
+    gunShot:(v)=>{ burst({type:'highpass',freq:3000,vol:.60*v,dur:.05,atk:.001});
+                   burst({type:'lowpass',freq:1100,sweep:150,vol:.50*v,dur:.20,atk:.002});
+                   tone({freq:130,to:40,dur:.20,vol:.32*v,atk:.001});
+                   burst({type:'bandpass',freq:1500,q:.6,sweep:280,vol:.13*v,dur:.60,delay:.05}); },
+    gunCock:(v)=>{ burst({type:'bandpass',freq:2600,q:3,vol:.22*v,dur:.06});
+                   burst({type:'bandpass',freq:1700,q:3,vol:.20*v,dur:.07,delay:.09});
+                   tone({type:'square',freq:180,to:120,dur:.06,vol:.06*v,delay:.09}); }
   };
 
   function play(name, mul){
@@ -1533,6 +1547,118 @@ function bladeMesh(half, depth, color, emis){
 }
 scene.add(camera);             // 카메라의 자식이 그려지도록 씬에 넣는다
 
+/* ---------------------------------------------------------
+   AK-47 (이스터에그)
+   총구가 -Z 를 보도록, 실제 크기(전장 약 87cm)에 맞춰 만듭니다.
+   --------------------------------------------------------- */
+const GUN_METAL = 0x2c3037, GUN_DARK = 0x1e2126, GUN_STEEL = 0x3c434b;
+const GUN_WOOD  = 0x8a5a2b, GUN_WOOD2 = 0x74491f;
+function boxM(w,h,d,col){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), M(col)); }
+function cylM(r1,r2,h,seg,col){ return new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,seg||10), M(col)); }
+/* 총열처럼 Z 방향으로 눕힌 원통 */
+function tubeM(r,len,col,seg){ const m=cylM(r,r,len,seg||10,col); m.rotation.x=Math.PI/2; return m; }
+
+function akModel(){
+  const g = new THREE.Group();
+  const add=(m,x,y,z,rx)=>{ m.position.set(x,y,z); if(rx) m.rotation.x=rx; g.add(m); return m; };
+
+  /* -- 총몸(리시버) -- */
+  add(boxM(.056,.098,.300,GUN_METAL), 0,-.020, .060);
+  add(boxM(.052,.040,.262,GUN_STEEL), 0, .042, .036);           // 윗덮개
+  for(let i=0;i<5;i++)                                          // 윗덮개의 홈
+    add(boxM(.054,.006,.008,GUN_DARK), 0,.060,-.058+i*.030);
+  add(boxM(.060,.030,.052,GUN_DARK),  0,-.030,-.098);           // 탄창 멈치 주변
+  add(boxM(.014,.016,.052,GUN_STEEL), .034,.030,-.016);         // 노리쇠 손잡이
+  const sel=add(boxM(.008,.084,.014,GUN_STEEL), .032,.010,.030); // 조정간
+  sel.rotation.z=.06;
+
+  /* -- 가늠자 -- */
+  add(boxM(.050,.024,.046,GUN_METAL), 0,.070,-.100);
+  add(boxM(.036,.010,.016,GUN_DARK),  0,.086,-.108);
+
+  /* -- 총열 · 가스관 -- */
+  add(tubeM(.011,.400,GUN_DARK,10),   0, .012,-.300);
+  add(boxM(.036,.048,.044,GUN_METAL), 0, .046,-.360);           // 가스 블록
+  add(tubeM(.010,.185,GUN_STEEL,8),   0, .056,-.262);           // 가스관
+
+  /* -- 나무 총열덮개 -- */
+  const up=add(boxM(.044,.034,.150,GUN_WOOD), 0,.058,-.238);
+  up.rotation.x=-.02;
+  add(boxM(.048,.010,.150,GUN_WOOD2), 0,.076,-.238);            // 윗면 결
+  add(boxM(.052,.058,.170,GUN_WOOD),  0,-.014,-.212);
+  add(boxM(.056,.016,.170,GUN_WOOD2), 0,-.040,-.212);           // 손이 닿는 아랫결
+  add(boxM(.058,.036,.026,GUN_DARK),  0,-.008,-.128);           // 덮개 고정쇠
+
+  /* -- 가늠쇠 · 총구 -- */
+  add(boxM(.032,.052,.038,GUN_METAL), 0, .048,-.474);
+  add(cylM(.005,.005,.040,6,GUN_DARK),0, .080,-.474);           // 가늠쇠 기둥
+  add(boxM(.008,.040,.030,GUN_METAL), .017,.078,-.474);         // 보호 날개
+  add(boxM(.008,.040,.030,GUN_METAL),-.017,.078,-.474);
+  add(tubeM(.016,.056,GUN_DARK,10),   0, .012,-.528);           // 총구 제동기
+  add(tubeM(.019,.012,GUN_STEEL,10),  0, .012,-.502);
+
+  /* -- 바나나 탄창 (앞으로 휘어진다) -- */
+  const mag=new THREE.Group();
+  const seg=[[-.052,-.006,.10,.060,.040],
+             [-.108,-.020,.28,.058,.039],
+             [-.158,-.048,.46,.055,.037],
+             [-.198,-.088,.64,.050,.034]];
+  seg.forEach(q=>{
+    const m=boxM(.036,q[3],q[4],GUN_STEEL);
+    m.position.set(0,q[0],q[1]); m.rotation.x=q[2]; mag.add(m);
+    const rib=boxM(.038,.008,q[4]*.9,GUN_DARK);
+    rib.position.set(0,q[0],q[1]); rib.rotation.x=q[2]; mag.add(rib);
+  });
+  mag.position.set(0,-.030,-.030); g.add(mag);
+
+  /* -- 방아쇠울 · 방아쇠 -- */
+  add(boxM(.038,.010,.086,GUN_METAL), 0,-.098,.086);
+  add(boxM(.010,.030,.010,GUN_METAL), .018,-.084,.048);
+  add(boxM(.010,.030,.010,GUN_METAL),-.018,-.084,.048);
+  add(boxM(.010,.030,.010,GUN_METAL), .018,-.084,.126);
+  add(boxM(.010,.030,.010,GUN_METAL),-.018,-.084,.126);
+  const tr=add(boxM(.009,.030,.011,GUN_DARK), 0,-.082,.070); tr.rotation.x=.25;
+
+  /* -- 권총 손잡이 -- */
+  const grip=add(boxM(.034,.115,.048,GUN_WOOD2), 0,-.108,.124);
+  grip.rotation.x=-.30;
+  add(boxM(.038,.014,.050,GUN_DARK), 0,-.166,.142);
+
+  /* -- 나무 개머리판 -- */
+  const neck=add(boxM(.042,.056,.090,GUN_WOOD), 0,-.024,.212); neck.rotation.x=-.10;
+  const st=add(boxM(.048,.082,.230,GUN_WOOD), 0,-.048,.330);    st.rotation.x=.05;
+  add(boxM(.052,.014,.230,GUN_WOOD2), 0,-.086,.330);
+  add(boxM(.050,.096,.014,GUN_DARK),  0,-.056,.444);            // 개머리판 밑판
+
+  /* -- 발사 섬광 (평소에는 숨어 있다) -- */
+  const flash=new THREE.Group();
+  const f1=new THREE.Mesh(new THREE.ConeGeometry(.055,.20,6),
+    new THREE.MeshBasicMaterial({color:0xffe08a,transparent:true,opacity:.95}));
+  f1.rotation.x=-Math.PI/2; f1.position.z=-.10; flash.add(f1);
+  const f2=new THREE.Mesh(new THREE.ConeGeometry(.10,.10,6),
+    new THREE.MeshBasicMaterial({color:0xfff6d0,transparent:true,opacity:.8}));
+  f2.rotation.x=-Math.PI/2; f2.position.z=-.04; flash.add(f2);
+  flash.position.set(0,.012,-.556); flash.visible=false; g.add(flash);
+  g.userData.flash=flash;
+
+  return g;
+}
+
+/* 총알이 지나간 자리 */
+function bulletTracer(x1,y1,z1,x2,y2,z2){
+  const dir=new THREE.Vector3(x2-x1,y2-y1,z2-z1), len=dir.length();
+  if(len<.2) return;
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(.014,.014,len,5),
+    new THREE.MeshBasicMaterial({color:0xfff0a8,transparent:true,opacity:.85}));
+  m.position.set((x1+x2)/2,(y1+y2)/2,(z1+z2)/2);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+  world.add(m);
+  let life=0;
+  const f=(t,dt)=>{ life+=dt; m.material.opacity=Math.max(0,.85-life*8);
+                    if(life>.13){ world.remove(m); removeAnim(f); } };
+  animated.push(f);
+}
+
 const ITEMS = [
   { id:'tool', key:'1', ic:'🔨', nm:'뗀석기', range:7.5, kill:false,
     have:()=> (S.c.tool||0) >= 1,
@@ -1575,7 +1701,12 @@ const ITEMS = [
       const pom=new THREE.Mesh(new THREE.SphereGeometry(.07,8,6),M(0x9a7a34));
       pom.position.y=-.34; g.add(pom);
       g.scale.setScalar(.42); return g;
-    } }
+    } },
+  /* 이스터에그 : 지도 밖 상자에서 찾을 수 있다 */
+  { id:'ak', key:'4', ic:'🔫', nm:'AK-47', range:45, kill:true, gun:true, cd:180,
+    have:()=> !!S.ak,
+    pos:[.175,-.230,-.500], rot:[.02,-.045,.02],
+    make(){ const g=akModel(); g.scale.setScalar(.90); return g; } }
 ];
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
 
@@ -1590,6 +1721,15 @@ function updateHand(dt, t){
   const it = equippedItem();
   if(!it) return;
   const P=it.pos, R=it.rot;
+  if(it.gun){
+    /* 총 : 뒤로 밀리고 총구가 들리는 반동 */
+    swingT = Math.max(0, swingT-dt);
+    const e = swingT>0 ? Math.sin((swingT/0.16)*Math.PI*0.5) : 0;
+    const bob = Math.sin(t*1.5)*.006 + bobLevel*Math.sin(stepPhase*TAU)*.014;
+    it.view.position.set(P[0]+e*.020, P[1]+bob-e*.006, P[2]+e*.075);
+    it.view.rotation.set(R[0]+e*.26, R[1], R[2]+bob*.5);
+    return;
+  }
   if(swingT>0){
     swingT = Math.max(0, swingT-dt);
     const k = 1 - swingT/0.36, e = Math.sin(k*Math.PI);
@@ -2370,52 +2510,91 @@ function hideItem(x,z){
   h2.position.y=.15; h2.scale.z=.7; g.add(h2);
   g.position.set(x,0,z); g.rotation.y=rr(0,TAU); world.add(g); return g;
 }
-/* 나무 상자 : 한 번만 열 수 있고, 안에 식량이 들어 있다 */
-function supplyCrate(x,z,rotY){
+/* 나무 상자 : 한 번만 열 수 있다. loot 로 안에 든 것을 정한다 */
+function supplyCrate(x,z,rotY,loot){
+  const ak = (loot==='ak');
+  const W1 = ak ? 0x6f4c2a : 0x9a6b3f, W2 = ak ? 0x543921 : 0x7a5231,
+        W3 = ak ? 0x7d5730 : 0xb0855a;
   const g=new THREE.Group();
-  const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,.9,1.1),M(0x9a6b3f));
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,.9,1.1),M(W1));
   body.position.y=.45; g.add(body);
   /* 앞뒤 나무판 테두리 */
   [.56,-.56].forEach(pz=>{
-    const b=new THREE.Mesh(new THREE.BoxGeometry(1.56,.16,.06),M(0x7a5231));
+    const b=new THREE.Mesh(new THREE.BoxGeometry(1.56,.16,.06),M(W2));
     b.position.set(0,.26,pz); g.add(b);
     const b2=b.clone(); b2.position.y=.7; g.add(b2);
   });
   /* 양옆 기둥 */
   [-.72,.72].forEach(px=>{
-    const b=new THREE.Mesh(new THREE.BoxGeometry(.08,.9,1.16),M(0x7a5231));
+    const b=new THREE.Mesh(new THREE.BoxGeometry(.08,.9,1.16),M(W2));
     b.position.set(px,.45,0); g.add(b);
   });
   /* 뚜껑 : 뒤쪽 모서리를 축으로 열린다 */
   const pivot=new THREE.Group(); pivot.position.set(0,.9,-.55); g.add(pivot);
-  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.56,.2,1.16),M(0xb0855a));
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(1.56,.2,1.16),M(W3));
   lid.position.set(0,.1,.55); pivot.add(lid);
   const knob=new THREE.Mesh(new THREE.BoxGeometry(.34,.13,.14),M(0x6b4a2a));
   knob.position.set(0,.2,1.02); pivot.add(knob);
+  /* 오래된 상자에는 이끼가 덮여 있다 */
+  if(ak){
+    for(let i=0;i<5;i++){
+      const mo=new THREE.Mesh(new THREE.IcosahedronGeometry(.16,0),M(0x5f8a44));
+      mo.position.set(-.55+i*.28, .96, -.3+((i*37)%7)/7*.6);
+      mo.scale.y=.35; pivot.add(mo);
+    }
+  }
 
   g.position.set(x,0,z); g.rotation.y=rotY||0; world.add(g);
   colliders.push({x,z,r:1.15});
-  glow(g,0x2a1c0c);
+  glow(g, ak ? 0x241a10 : 0x2a1c0c);
 
   /* 열리는 움직임 */
   let opened=false, k=0;
   animated.push(()=>{ if(opened && k<1){ k=Math.min(1,k+.06); pivot.rotation.x=-k*1.35; } });
-  const openIt=()=>{ opened=true; Snd.play('woodGet'); pickFx(x,1.45,z,0xf6d05a); };
+  const openIt=()=>{ opened=true; Snd.play('woodGet'); pickFx(x,1.45,z, ak?0xffd76a:0xf6d05a); };
 
   const it={
-    nid:nidSeq++, net:'pick', x, z, range:3.4, tag:'food',
-    label:()=>'📦 상자 열기', ready:()=>true,
+    /* 이스터에그 상자는 사람마다 따로 연다(net:'solo') */
+    nid:nidSeq++, net: ak ? 'solo' : 'pick', x, z, range:3.4, tag: ak ? null : 'food',
+    label:()=> ak ? '📦 낡은 상자 열기' : '📦 상자 열기',
+    ready:()=>true,
     /* 다른 사람이 먼저 열었을 때 : 뚜껑만 열린다 */
     ghost(){ openIt(); removeIt(it); },
     act(){
       openIt(); removeIt(it);
-      S.c.food += 2;
-      if(S.eraIndex===0) checkPaleo1('📦 상자에서 식량을 찾았어요!');
-      else { refresh(); toast(`📦 상자에서 식량 2개를 찾았어요!`); }
+      if(ak){
+        S.ak = true;
+        Snd.play('gunCock', 1.0);
+        setTimeout(()=>Snd.play('levelUp',.8), 220);
+        drawHotbar();
+        centerMsg('<h2>🔫 ？？？</h2>'+
+          '<p>돌담 밖 상자 안에 <b>있을 리 없는 물건</b>이 들어 있었어요.</p>'+
+          '<p style="opacity:.8">아이템창 <b>4번</b> — 누르면 들고, 다시 누르면 내려요.</p>', 5200);
+        toast('🔫 AK-47 을(를) 찾았어요!');
+        Buddy.cheer();
+        Guide.say('🔫 <b>이건… 선사시대 물건이 아닌데?</b> 아무한테도 말하지 말자.', 5);
+      } else {
+        S.c.food += 2;
+        if(S.eraIndex===0) checkPaleo1('📦 상자에서 식량을 찾았어요!');
+        else { refresh(); toast('📦 상자에서 식량 2개를 찾았어요!'); }
+      }
     }
   };
   interactables.push(it);
   return g;
+}
+
+/* ---------------------------------------------------------
+   이스터에그 : 돌담 바깥 구석에 숨어 있는 낡은 상자
+   (시대를 만든 다음 맨 마지막에 놓아서 다른 배치를 건드리지 않습니다)
+   --------------------------------------------------------- */
+function easterEgg(){
+  if(S.ak) return;                       // 이미 찾았으면 다시 놓지 않는다
+  const EX=-62, EZ=-62;
+  const R=[[5.6,0],[4.0,4.0],[0,5.6],[-4.0,4.0],[-5.6,0],[-4.0,-4.0],[0,-5.6],[4.0,-4.0]];
+  R.forEach((q,i)=>{ if(i%3===2) return;                 // 드나들 틈을 남긴다
+    rock(EX+q[0], EZ+q[1], 1.15+(i%3)*.28, 0x857b70); });
+  supplyCrate(EX,EZ,-.35,'ak');
 }
 function siteMarker(x,z,col){
   const g=new THREE.Group();
@@ -2813,7 +2992,7 @@ function buildPaleo(){
   campfireRing(0,36,{needWood:true});
   rock(3.4,37.2,.5,0x8d8378); rock(-3,35,.45,0x8d8378);
   /* 야영지 옆 나무 상자 */
-  supplyCrate(-4.6,40.2,.5);
+  supplyCrate(-4.6,40.2,.5,'food');
 
   /* =============== 밤 대비 : 뗀석기로 벨 수 있는 나무 =============== */
   [[-26,48],[22,44],[-34,30],[32,36],[-9,55],[13,56],[38,50],[-20,60]]
@@ -4738,7 +4917,8 @@ function attack(){
   const it = equippedItem();
   if(!it || paused || dead) return;
   const now = performance.now();
-  if(now - atkAt < ATK_CD_MS) return;
+  if(now - atkAt < (it.cd || ATK_CD_MS)) return;
+  if(it.gun){ shoot(it, now); return; }
   atkAt = now; swingT = 0.36;
   Snd.play(it.kill ? 'metalStir' : 'stoneMove', 1.0);
   camShake = Math.max(camShake, .32);
@@ -4763,6 +4943,47 @@ function attack(){
     }
   } else Snd.throttle('stoneHit', 300, .35);
 }
+/* 총 쏘기 : 화면 가운데를 향해 한 발 */
+function shoot(it, now){
+  atkAt = now; swingT = 0.16;
+  Snd.play('gunShot', 1.0);
+  camShake = Math.max(camShake, .60);
+
+  /* 총구 섬광 */
+  const fl = it.view.userData && it.view.userData.flash;
+  if(fl){
+    fl.visible = true;
+    fl.rotation.z = Math.random()*TAU;
+    fl.scale.setScalar(.85 + Math.random()*.4);
+    clearTimeout(fl.userData.timer);
+    fl.userData.timer = setTimeout(()=>{ fl.visible=false; }, 55);
+  }
+
+  /* 조준선 : 카메라가 보는 쪽 */
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  let best = -1, bd = 1e9;
+  for(let i=0;i<Boars.list.length;i++){
+    const b = Boars.list[i];
+    const dx = b.x-player.x, dz = b.z-player.z, d = Math.hypot(dx,dz);
+    if(d > it.range || d < .001) continue;
+    if((dx*fx + dz*fz)/d < 0.90) continue;      // 화면 가운데 약 ±25도 안
+    if(d < bd){ bd = d; best = i; }
+  }
+
+  /* 총알 자국 */
+  const mx = player.x + fx*.9, mz = player.z + fz*.9, my = 1.45;
+  if(best >= 0){
+    const b = Boars.list[best];
+    bulletTracer(mx,my,mz, b.x, .85, b.z);
+    Boars.kill(best);
+    if(Net.on && !Net.host) Net.send({t:'fx', kill:[b.nid], stun:[]});
+    Snd.play('boarHit', .8);
+    toast('🔫 명중!');
+  } else {
+    bulletTracer(mx,my,mz, player.x+fx*it.range, 1.1, player.z+fz*it.range);
+  }
+}
+
 /* 멧돼지에게 잡혔을 때 : 그 시대를 처음부터 다시 시작한다 */
 function gameOver(){
   if(dead) return;
@@ -4888,6 +5109,7 @@ function startEra(){
   Sky.isNight = false; Sky.isDusk = false; Sky.isDawn = false;
   S.base = {x:era.start.x, z:era.start.z};                     // 여기서 멀어지면 멧돼지가 나타난다
   era.build();
+  easterEgg();
 
   /* 멀티플레이 : 서버에 저장된 진행 상황을 반영한다 */
   if(Net.on){
@@ -4949,7 +5171,8 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyF'){ e.preventDefault(); eat(); }
   if(e.code==='Digit1'||e.code==='Numpad1'){ e.preventDefault(); equip('tool'); }
   if(e.code==='Digit2'||e.code==='Numpad2'){ e.preventDefault(); equip('polish'); }
-  if(e.code==='Digit3'||e.code==='Numpad3'){ e.preventDefault(); equip('sword'); } });
+  if(e.code==='Digit3'||e.code==='Numpad3'){ e.preventDefault(); equip('sword'); }
+  if(e.code==='Digit4'||e.code==='Numpad4'){ e.preventDefault(); equip('ak'); } });
 addEventListener('keyup',e=>{ keys[e.code]=false;
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=false; });
 addEventListener('blur',()=>{ running=false; for(const k in keys) keys[k]=false; });
