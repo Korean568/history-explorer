@@ -693,17 +693,18 @@ const SOUNDS = {
   nightFall:     { url:null, vol:0.45 },
   dayBreak:      { url:null, vol:0.45 },
   owl:           { url:null, vol:0.28 },
-  /* 이스터에그 */
-  gunShot:       { url:null, vol:0.55 },
-  gunCock:       { url:null, vol:0.40 },
-  gunTail:       { url:null, vol:0.30 },   // 멀리 퍼지는 메아리
-  gunDry:        { url:null, vol:0.35 },   // 빈 탄창 : 찰칵
-  magRelease:    { url:null, vol:0.35 },   // 탄창 멈치
-  magOut:        { url:null, vol:0.35 },   // 탄창을 뽑는다
-  magIn:         { url:null, vol:0.45 },   // 새 탄창을 끼운다
-  boltPull:      { url:null, vol:0.40 },   // 노리쇠를 당긴다
-  boltRelease:   { url:null, vol:0.45 },   // 노리쇠를 놓는다
-  shell:         { url:null, vol:0.22 }    // 탄피가 바닥에 떨어진다
+  /* 이스터에그 — sounds/ 폴더에 같은 이름의 .mp3 를 넣으면 그 소리를 씁니다.
+     파일이 없으면 아래의 내장 합성음이 그대로 나옵니다. (소리-넣는법.md 참고) */
+  gunShot:       { url:'sounds/gunShot.mp3',     vol:0.55 },
+  gunCock:       { url:'sounds/gunCock.mp3',     vol:0.40 },
+  gunTail:       { url:'sounds/gunTail.mp3',     vol:0.30 },   // 멀리 퍼지는 메아리
+  gunDry:        { url:'sounds/gunDry.mp3',      vol:0.35 },   // 빈 탄창 : 찰칵
+  magRelease:    { url:'sounds/magRelease.mp3',  vol:0.35 },   // 탄창 멈치
+  magOut:        { url:'sounds/magOut.mp3',      vol:0.35 },   // 탄창을 뽑는다
+  magIn:         { url:'sounds/magIn.mp3',       vol:0.45 },   // 새 탄창을 끼운다
+  boltPull:      { url:'sounds/boltPull.mp3',    vol:0.40 },   // 노리쇠를 당긴다
+  boltRelease:   { url:'sounds/boltRelease.mp3', vol:0.45 },   // 노리쇠를 놓는다
+  shell:         { url:'sounds/shell.mp3',       vol:0.22 }    // 탄피가 바닥에 떨어진다
 };
 
 /* =========================================================
@@ -738,12 +739,17 @@ const Snd = (function(){
   }
   function resume(){ try{ if(ctx && ctx.state==='suspended') ctx.resume(); }catch(e){} }
 
+  /* url 이 있는 소리는 그 파일을 불러온다.
+     파일이 없거나(404) 열리지 않으면 조용히 넘어가고 내장 합성음을 쓴다. */
   function loadFiles(){
     for(const k in SOUNDS){
       const u=SOUNDS[k].url; if(!u) continue;
       try{
-        fetch(u).then(r=>r.arrayBuffer()).then(b=>ctx.decodeAudioData(b))
-          .then(buf=>{ file[k]=buf; }).catch(()=>{});
+        fetch(u)
+          .then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+          .then(b => ctx.decodeAudioData(b))
+          .then(buf => { file[k] = buf; })
+          .catch(()=>{});
       }catch(e){}
     }
   }
