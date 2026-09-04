@@ -1566,6 +1566,7 @@ let swingT = 0;                // 휘두르는 중
 const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
 const AK_RELOAD = 1.9;         // 장전에 걸리는 시간(초)
 let reloadT = 0;               // 남은 장전 시간
+let emptyAt = -1e9;            // 빈 탄창 안내를 마지막으로 띄운 때
 let autoFire = true;           // 평소에는 연발, V 키로 단발과 번갈아 쓴다
 let firing   = false;          // 방아쇠를 당기고 있는가 (연발일 때 계속 나간다)
 const AK_CD_AUTO = 95;         // 연발 : 0.095초마다 한 발 (분당 약 630발)
@@ -1754,6 +1755,7 @@ const ITEMS = [
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
 
 const equippedItem = ()=> ITEMS.find(i=>i.id===equipId) || null;
+const gunHeld = ()=>{ const it=equippedItem(); return !!(it && it.gun); };
 function handRest(it){
   it.view.position.set(it.pos[0], it.pos[1], it.pos[2]);
   it.view.rotation.set(it.rot[0], it.rot[1], it.rot[2]);
@@ -5069,8 +5071,12 @@ function updateReload(dt){
 function shoot(it, now){
   if(reloadT>0) return;                       // 장전하는 동안에는 못 쏜다
   if((S.ammo|0) <= 0){
-    Snd.throttle('claySoft', 260, .8);
-    toast('🔫 탄창이 비었어요 — ' + josa(usingTouch?'🔄 버튼':'R 키','으로','로') + ' 장전하세요');
+    atkAt = now;
+    if(now - emptyAt > 700){
+      emptyAt = now;
+      Snd.play('claySoft', .8);
+      toast('🔫 탄창이 비었어요 — ' + josa(usingTouch?'🔄 버튼':'R 키','으로','로') + ' 장전하세요');
+    }
     return;
   }
   S.ammo--; drawAmmo();
@@ -5394,21 +5400,27 @@ document.addEventListener('mousemove',e=>{
     dragLook={x:e.clientX,y:e.clientY};
   }
 });
-let mDownAt=null;
+let mDownAt=null, gunClick=false;
 cv.addEventListener('mousedown',e=>{
   if(dragMode || usingTouch || !mouseOk()) return;
   if(!document.pointerLockElement){
     dragLook={x:e.clientX,y:e.clientY};
     mDownAt={x:e.clientX,y:e.clientY};
+    /* 커서 잠금이 안 되는 환경(브라우저 미리보기 등)에서도
+       총은 누르는 순간 발사되고, 누르고 있는 동안 연발이 이어진다 */
+    if(e.button===0 && gunHeld() && !paused && !dead){
+      gunClick = true; firing = true; attack();
+    }
   }
 });
 addEventListener('mouseup',e=>{
-  /* 잠금이 막힌 환경에서는 "제자리 클릭"을 상호작용으로 인정한다 */
-  if(mDownAt && lockBlocked && !dragMode && !usingTouch &&
+  /* 잠금이 막힌 환경에서는 "제자리 클릭"을 상호작용으로 인정한다
+     (총은 이미 누를 때 쐈으므로 여기서 또 쏘지 않는다) */
+  if(mDownAt && !gunClick && lockBlocked && !dragMode && !usingTouch &&
      Math.hypot(e.clientX-mDownAt.x, e.clientY-mDownAt.y) < 5){
     if(equipId) attack(); else tryInteract();
   }
-  mDownAt=null; dragLook=null;
+  mDownAt=null; dragLook=null; gunClick=false;
 });
 document.addEventListener('mousedown',e=>{
   if(document.pointerLockElement===cv && e.button===0){
