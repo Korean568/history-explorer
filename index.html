@@ -1749,8 +1749,10 @@ function akModel(){
   up.rotation.x=-.02;
   add(boxM(.048,.010,.196,GUN_WOOD2), 0,.076,-.243);            // 윗면 결
   add(boxM(.046,.034,.060,GUN_METAL), 0,.052,-.118);            // 가스관 뒷목
-  add(boxM(.052,.058,.210,GUN_WOOD),  0,-.014,-.195);
-  add(boxM(.056,.016,.210,GUN_WOOD2), 0,-.040,-.195);           // 손이 닿는 아랫결
+  add(boxM(.052,.074,.210,GUN_WOOD),  0,-.007,-.195);
+  add(boxM(.056,.016,.210,GUN_WOOD2), 0,-.038,-.195);           // 손이 닿는 아랫결
+  /* 위아래 덮개 사이로 배경이 비쳐 보이지 않게 총열을 굵게 감싼다 */
+  add(tubeM(.018,.192,GUN_DARK,8),    0, .030,-.243);
   add(boxM(.058,.038,.050,GUN_DARK),  0,-.008,-.105);           // 덮개 고정쇠
 
   /* -- 가늠쇠 · 총구 -- */
@@ -3119,7 +3121,9 @@ const S = { eraIndex:0, c:{}, mission:{} };
 function resetCounts(){ S.c = {food:0,stick:0,hide:0,tool:0,polish:0,wood:0,seed:0,clay:0,grass:0,grain:0,copper:0,tin:0,pillar:0,cap:0}; }
 
 /* ---------- 배고픔 ---------- */
-const HUNGER_SEC = 240;          // 배가 가득 찬 상태에서 비기까지 걸리는 시간(초)
+/* 5초에 1% 씩 줄어든다 (100% → 0% 이 500초). 달릴 때는 2배로 빨라진다. */
+const HUNGER_SEC = 500;
+const HUNGER_RUN = 2;
 let hungerMul = 1;               // 배가 고프면 느려진다
 let hungerWarn = 0;
 function hungerOn(){ return S.eraIndex >= 1; }
@@ -3137,11 +3141,27 @@ function eat(){
   Snd.play('pick'); Buddy.cheer(); hungerWarn = 8;
   toast(`🍖 식량을 먹었어요 (남은 식량 ${S.c.food}개)`);
 }
+/* 롭 패널은 글에 따라 높이가 달라진다. 배고픔 게이지가 가려지지 않게
+   패널 높이를 재서 그 바로 위에 올려 둔다. (0.25초에 한 번만 잰다) */
+let hungerPosT = 0;
+function placeHunger(dt){
+  hungerPosT -= dt;
+  if(hungerPosT > 0) return;
+  hungerPosT = 0.25;
+  const gh = (elGuide && getComputedStyle(elGuide).display !== 'none') ? elGuide.offsetHeight : 0;
+  const px = (gh ? gh + 22 : 24);
+  if(elHunger.dataset.b !== String(px)){
+    elHunger.dataset.b = String(px);
+    elHunger.style.bottom = 'calc(' + px + 'px + env(safe-area-inset-bottom))';
+  }
+}
+
 function updateHunger(dt){
   if(!hungerOn()){ elHunger.style.display='none'; hungerMul=1; return; }
   elHunger.style.display='flex';
+  placeHunger(dt);
   if(!paused && !dead){
-    S.hunger = Math.max(0, (S.hunger==null?100:S.hunger) - (100/HUNGER_SEC)*(running?1.7:1)*dt);
+    S.hunger = Math.max(0, (S.hunger==null?100:S.hunger) - (100/HUNGER_SEC)*(running?HUNGER_RUN:1)*dt);
     /* 배고프면 스스로 먹어야 한다 */
     hungerWarn -= dt;
     if(S.hunger<=0){
