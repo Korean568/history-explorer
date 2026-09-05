@@ -1211,6 +1211,7 @@ const cl01 = (v)=>Math.max(0,Math.min(1,v));
 let clockAcc = 0;
 
 function updateSky(dt){
+  if(CAVE.on) return;                       // 동굴 안은 언제나 캄캄하다
   if(!paused) Sky.t = (Sky.t + dt) % CYCLE;
   const t = Sky.t;
 
@@ -2540,7 +2541,7 @@ const Net = {
         break;
 
       case 'boars':
-        if(!this.host) netApplyBoars(m.list);
+        if(!this.host && !CAVE.on) netApplyBoars(m.list);
         break;
 
       case 'fx':
@@ -2605,15 +2606,16 @@ const Net = {
     this.posAcc += dt;
     if(this.posAcc > 1/15){
       this.posAcc = 0;
-      this.send({t:'pos', x:+player.x.toFixed(2), z:+player.z.toFixed(2),
-                 yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0)});
+      if(!CAVE.on)                                  // 동굴 안에서는 자리를 알리지 않는다
+        this.send({t:'pos', x:+player.x.toFixed(2), z:+player.z.toFixed(2),
+                   yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0)});
     }
     /* 공유 자원이 바뀌었으면 알리기 */
     this.shareAcc += dt;
     if(this.shareAcc > 0.35){ this.shareAcc = 0; this.pushShared(); this.pushMissions(); }
 
     /* 방장이면 멧돼지 위치를 알려 준다 (초당 10회) */
-    if(this.host){
+    if(this.host && !CAVE.on){                      // 동굴 멧돼지는 나만의 것
       this.boarAcc += dt;
       if(this.boarAcc > 0.1){
         this.boarAcc = 0;
@@ -3075,7 +3077,7 @@ function supplyCrate(x,z,rotY,loot){
    세계를 새로 만들지 않고 통째로 바꿔 끼웠다가 되돌립니다.
    ========================================================= */
 let bosses = [];                     // 지금 살아 있는 큰 적들
-const CAVE = { on:false, phase:'walk', keep:null, back:{x:40,z:-24} };
+const CAVE = { on:false, phase:'walk', keep:null, saved:null, back:{x:40,z:-24} };
 
 /* ---------- 모형 ---------- */
 function mammothModel(){
@@ -3233,24 +3235,35 @@ function bossMusic(on){
 
 /* ---------- 들어가고 나오기 ---------- */
 function caveEnter(){
-  if(Net.on){ toast('🚪 동굴은 혼자 탐험할 때만 들어갈 수 있어요'); return; }
   if(!S.ak){ toast('🔦 캄캄해서 그냥은 못 들어가요'); return; }
   /* 지금 세계를 통째로 치워 둔다 */
   CAVE.keep = { world, colliders, interactables, animated, firePits, nidSeq, bulletHoles,
                 boars: Boars.list, px: player.x, pz: player.z,
                 bg: scene.background, fog: scene.fog };
   scene.remove(world);
-  world = new THREE.Group(); scene.add(world);
-  colliders = []; interactables = []; animated = []; firePits = []; bulletHoles = [];
-  nidSeq = 0; Boars.list = []; bosses = [];
-  CAVE.on = true; CAVE.phase = 'walk';
+  if(CAVE.saved){
+    /* 전에 들어갔던 동굴을 그대로 다시 연다 (매머드·멧돼지·문 상태가 남아 있다) */
+    const c = CAVE.saved;
+    world = c.world; colliders = c.colliders; interactables = c.interactables;
+    animated = c.animated; firePits = c.firePits; nidSeq = c.nidSeq;
+    bulletHoles = c.bulletHoles; Boars.list = c.boars; bosses = c.bosses;
+    CAVE.phase = c.phase;
+    scene.add(world);
+  } else {
+    world = new THREE.Group(); scene.add(world);
+    colliders = []; interactables = []; animated = []; firePits = []; bulletHoles = [];
+    nidSeq = 0; Boars.list = []; bosses = [];
+    CAVE.phase = 'walk';
+  }
+  CAVE.on = true;
   scene.background = new THREE.Color(0x0a0a0e);
   scene.fog = new THREE.Fog(0x0a0a0e, 12, 62);
   hemi.intensity = 0.22; sun.intensity = 0.10;
   caveLamp.intensity = 1.5;
-  buildCave();
+  if(!CAVE.saved) buildCave();
   player.x = 0; player.z = 46; yaw = Math.PI; pitch = -0.02;
   Snd.play('eraShift', .7);
+  if(Net.on){ Net.send({t:'chat', msg:'🕳️ 동굴에 들어갔어!'}); Chat.system('🕳️ 동굴에 들어갔습니다'); }
   centerMsg('<h2>🕳️ 동굴</h2><p>깊고 캄캄합니다. 돌 말고는 아무것도 없어요.<br>'+
             '<b>안쪽 끝</b>에 무언가 있는 것 같습니다…</p>', 4200);
 }
@@ -3258,6 +3271,10 @@ function caveEnter(){
 function caveLeave(won){
   if(!CAVE.on) return;
   const k = CAVE.keep;
+  /* 싸움이 안 끝났으면 동굴을 그대로 기억해 둔다 */
+  CAVE.saved = won ? null : { world, colliders, interactables, animated, firePits,
+                              nidSeq, bulletHoles, boars: Boars.list, bosses,
+                              phase: CAVE.phase };
   scene.remove(world);
   world = k.world; scene.add(world);
   colliders = k.colliders; interactables = k.interactables; animated = k.animated;
@@ -3268,6 +3285,7 @@ function caveLeave(won){
   CAVE.on = false; CAVE.phase = 'walk'; CAVE.keep = null;
   player.x = CAVE.back.x; player.z = CAVE.back.z; yaw = 0;
   elBoss.style.display = 'none';
+  if(Net.on){ Net.send({t:'chat', msg:'🚪 동굴에서 나왔어!'}); Chat.system('🚪 동굴에서 나왔습니다'); }
   Sky.p = -1;                                   // 바깥 밝기를 다시 계산하게 한다
   if(won) centerMsg('<h2>🚀 RPG 를 얻었습니다!</h2>'+
     '<p>아이템창에서 들 수 있어요. 한 발에 <b>1972</b>.</p>', 5000);
@@ -3287,7 +3305,7 @@ function caveOpenDoor(){
 
   /* 매머드 */
   const mg = mammothModel(); mg.position.set(0,0,-46); world.add(mg);
-  bosses.push({ kind:'mammoth', g:mg, x:0, z:-46, hp:150000, max:150000, r:3.6,
+  bosses.push({ kind:'mammoth', g:mg, x:0, z:-46, hp:15000, max:15000, r:3.6,
                 alive:true, vuln:true, hitCd:0 });
 
   /* 멧돼지 20마리 */
@@ -6440,6 +6458,7 @@ function tryInteract(){
 /* ---------- 다른 사람이 한 행동을 내 화면에도 반영한다 ---------- */
 let netRemote = false;
 function netRemoteAct(nid){
+  if(CAVE.on) return;                     // 동굴 안은 번호 체계가 따로다
   const it = findNid(nid);
   if(!it) return;
   if(it.net === 'pick'){ if(it.ghost) it.ghost(); return; }
