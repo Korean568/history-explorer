@@ -1812,6 +1812,62 @@ function akModel(){
   return g;
 }
 
+/* ---------- 총알이 박힌 자국 ---------- */
+const shotRay = new THREE.Raycaster();
+const holeMat = new THREE.MeshBasicMaterial({color:0x241c14, transparent:true, opacity:.88, depthWrite:false});
+let bulletHoles = [];
+const HOLE_MAX = 60;                 // 이보다 많아지면 오래된 것부터 지운다
+
+/* from 에서 dir 방향으로 쏘았을 때 무언가에 맞으면 자국을 남기고 맞은 자리를 돌려준다 */
+function bulletImpact(from, dir, maxDist){
+  shotRay.set(from, dir);
+  shotRay.far = maxDist;
+  let hit = null;
+  try{
+    const list = shotRay.intersectObject(world, true);
+    for(const h of list){
+      if(!h.face) continue;                       // 면이 없는 것(선 등)은 지나간다
+      if(h.object.userData.noHole) continue;      // 자국끼리 겹쳐 맞지 않게
+      hit = h; break;
+    }
+  }catch(e){ return null; }
+  if(!hit) return null;
+
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+  /* 자국 */
+  const hole = new THREE.Mesh(new THREE.CircleGeometry(.055, 8), holeMat);
+  hole.userData.noHole = true;
+  hole.position.copy(hit.point).addScaledVector(n, .012);
+  hole.lookAt(hit.point.clone().add(n));
+  world.add(hole);
+  bulletHoles.push(hole);
+  while(bulletHoles.length > HOLE_MAX){ const o = bulletHoles.shift(); world.remove(o); }
+
+  /* 맞은 자리에서 튀는 부스러기 */
+  const g = new THREE.Group(); g.position.copy(hit.point); world.add(g);
+  const bits = [];
+  for(let i=0;i<4;i++){
+    const b = new THREE.Mesh(new THREE.TetrahedronGeometry(.05,0),
+      new THREE.MeshBasicMaterial({color:0xbdb2a4, transparent:true}));
+    b.userData.noHole = true;
+    b.userData.v = n.clone().multiplyScalar(1.6+Math.random()*1.4)
+      .add(new THREE.Vector3(Math.random()-.5, Math.random()*.9, Math.random()-.5));
+    g.add(b); bits.push(b);
+  }
+  let life = 0;
+  const f = (t,dt)=>{
+    life += dt;
+    for(const b of bits){
+      b.position.addScaledVector(b.userData.v, dt); b.userData.v.y -= 9*dt;
+      b.rotation.x += dt*9; b.rotation.z += dt*7;
+      b.material.opacity = Math.max(0, 1-life*2.6);
+    }
+    if(life > .45){ world.remove(g); removeAnim(f); }
+  };
+  animated.push(f);
+  return hit.point;
+}
+
 /* 탄피 하나가 오른쪽 위로 튀어 올랐다가 땅에 떨어진다 */
 function ejectShell(p, right, up, fwd){
   const g = new THREE.Group();
@@ -1927,7 +1983,7 @@ const ITEMS = [
        mag  — 탄창을 갈아 끼울 때 (총 아래쪽이 보이게 눕힌다)
        bolt — 노리쇠를 당길 때   (총 오른쪽이 보이게 돌린다) */
     reload:{ pos:[.050,-.150,-.660], rot:[.12,.40,-1.28] },
-    reloadBolt:{ pos:[-.020,-.140,-.600], rot:[.05,-.88,.14] },
+    reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.34,-.88,.14] },
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } }
 ];
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
@@ -3192,7 +3248,7 @@ function clearWorld(){
   scene.remove(world);
   world.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
   world = new THREE.Group(); scene.add(world);
-  colliders=[]; interactables=[]; animated=[]; nidSeq=0;
+  colliders=[]; interactables=[]; animated=[]; nidSeq=0; bulletHoles=[];
   firePits=[]; Boars.reset();
 }
 function ground(col){
@@ -5373,12 +5429,17 @@ function shoot(it, now){
     Snd.play('boarHit', .8);
     toast('🔫 명중!');
   } else {
-    /* 빗나간 총알도 보고 있는 쪽으로 날아간다 */
-    const e2 = eye.clone().addScaledVector(fwd, range);
-    e2.x += (Math.random()-.5)*range*spread*2;
-    e2.y += (Math.random()-.5)*range*spread*2;
-    e2.z += (Math.random()-.5)*range*spread*2;
-    bulletTracer(mv.x,mv.y,mv.z, e2.x, Math.max(.2,e2.y), e2.z);
+    /* 빗나간 총알은 보고 있는 쪽으로 날아가다가 무언가에 박힌다 */
+    const dir = fwd.clone();
+    dir.x += (Math.random()-.5)*spread*2;
+    dir.y += (Math.random()-.5)*spread*2;
+    dir.z += (Math.random()-.5)*spread*2;
+    dir.normalize();
+    const far = Math.max(range, 60);
+    const at = bulletImpact(eye, dir, far);          // 맞은 자리 (없으면 null)
+    const p2 = at || eye.clone().addScaledVector(dir, far);
+    bulletTracer(mv.x,mv.y,mv.z, p2.x, p2.y, p2.z);  // 총알은 박힌 자리에서 멈춘다
+    if(at) Snd.throttle('stoneHit', 90, .30);
   }
 }
 
