@@ -419,6 +419,16 @@
   #hungerWrap.low .bar i{background:linear-gradient(90deg,#e2953a,#d4423f);}
   #hungerWrap.empty{animation:dpul .9s infinite;}
 
+  /* ---------- 보스 ---------- */
+  #boss{position:absolute;left:50%;transform:translateX(-50%);
+    top:calc(70px + env(safe-area-inset-top));width:min(460px,72vw);display:none;text-align:center;
+    background:rgba(26,16,20,.82);border:3px solid #7a2f3a;border-radius:16px;padding:8px 14px 10px;}
+  #bossName{font-size:15px;font-weight:800;color:#ffd9d9;letter-spacing:.5px;margin-bottom:5px;}
+  #bossBar{height:13px;border-radius:8px;background:#3a2028;overflow:hidden;border:2px solid #5e2530;}
+  #bossFill{display:block;height:100%;width:100%;border-radius:8px;
+    background:linear-gradient(90deg,#e0364b,#ff8a5c);transition:width .18s;}
+  #bossSub{margin-top:5px;font-size:11.5px;font-weight:800;color:#ffb9b9;}
+
   /* ---------- 낮과 밤 ---------- */
   #clock{position:absolute;top:calc(12px + env(safe-area-inset-top));left:252px;
     background:rgba(255,255,255,.9);border:3px solid var(--bark);border-radius:14px;
@@ -586,6 +596,11 @@
       <button id="chatSend">보내기</button>
     </div>
   </div>
+  <div id="boss">
+    <div id="bossName">매머드</div>
+    <div id="bossBar"><i id="bossFill"></i></div>
+    <div id="bossSub">멧돼지 20마리 남음</div>
+  </div>
   <div id="crosshair"></div>
   <div id="joy"><i></i></div>
   <button id="runBtn">🏃<span>달리기</span></button>
@@ -640,6 +655,7 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elGDist=$('#gDist'), elGNav=$('#gNav'), elGAvatar=$('#gAvatar'),
       elHunger=$('#hungerWrap'), elHungerBar=$('#hungerBar'), elHungerTxt=$('#hungerTxt'),
       elHp=$('#hpWrap'), elHpBar=$('#hpBar'), elHpTxt=$('#hpTxt'),
+      elBoss=$('#boss'), elBossName=$('#bossName'), elBossFill=$('#bossFill'), elBossSub=$('#bossSub'),
       elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party'),
       elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn'),
       elAmmo=$('#ammo');
@@ -1050,6 +1066,9 @@ $('#app').appendChild(renderer.domElement);
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x88aa66, 0.95);
 scene.add(hemi);
+/* 동굴에서만 켜지는 손전등 */
+const caveLamp = new THREE.PointLight(0xffe0b0, 0, 34, 1.6);
+caveLamp.position.set(0,1.6,0); camera.add(caveLamp);
 const sun = new THREE.DirectionalLight(0xfff3d6, 0.85);
 sun.position.set(40,70,25); scene.add(sun);
 
@@ -1411,7 +1430,7 @@ const Boars = {
   /* 쓰러진다. drop 이 true 면 그 자리에 가죽을 남긴다. */
   kill(i, drop){
     const b=this.list[i]; this.list.splice(i,1);
-    if(drop) dropHide(b.x, b.z);
+    if(drop && !CAVE.on) dropHide(b.x, b.z);
     const g=b.g; let a=0, life=0;
     pickFx(b.x, 1.0, b.z, 0xffd76a);
     animated.push(function f(t,dt){
@@ -1423,6 +1442,14 @@ const Boars = {
     });
   },
   max(){ return Math.min(3, 2 + (S.eraIndex||0)); },
+
+  /* 정해진 자리에 부른다 (동굴 보스전에서 씀) */
+  spawnAt(x, z){
+    this.spawn(true);
+    const b = this.list[this.list.length-1];
+    if(b){ b.x=x; b.z=z; b.g.position.set(x,0,z); b.life=1e9; b.cave=true; }
+    return b;
+  },
 
   spawn(wild){
     const g = boarModel(); g.userData.noHole = true; world.add(g);
@@ -1454,13 +1481,13 @@ const Boars = {
   update(dt){
     const guest = Net.on && !Net.host;      // 멧돼지 계산은 방장만 한다
     /* 밤에는 정해진 수만큼 나타난다 (새벽이 오면 더 이상 나타나지 않는다) */
-    if(!guest && Sky.isNight && !Sky.isDawn && !paused &&
+    if(!guest && !CAVE.on && Sky.isNight && !Sky.isDawn && !paused &&
        this.list.filter(b=>!b.wild).length < this.max()){
       this.nextSpawn -= dt;
       if(this.nextSpawn <= 0){ this.spawn(false); this.nextSpawn = 8 + Math.random()*5; }
     }
     /* 마을에서 너무 멀리 가면 25% 확률로 멧돼지가 나타난다 (낮에도!) */
-    if(!guest && !paused && !Sky.isDawn){
+    if(!guest && !paused && !Sky.isDawn && !CAVE.on){
       const bx=(S.base?S.base.x:0), bz=(S.base?S.base.z:44);
       const far = Math.hypot(player.x-bx, player.z-bz) > FAR_DIST;
       if(far){
@@ -1558,7 +1585,8 @@ const Boars = {
 
       let tx, tz, sp;
 
-      if(b.state==='flee' || Sky.isDawn || (!Sky.isNight && !b.wild)){
+      /* 동굴 보스전의 멧돼지는 도망치지도, 멀어져 사라지지도 않는다 */
+      if(!CAVE.on && (b.state==='flee' || Sky.isDawn || (!Sky.isNight && !b.wild))){
         b.state='flee';
         tx=-dx/d; tz=-dz/d; sp=b.speed*1.15;
         if(d>64){ world.remove(b.g); this.list.splice(i,1); continue; }
@@ -1915,6 +1943,32 @@ function bulletImpact(from, dir, maxDist){
   return hit.point;
 }
 
+/* RPG 가 터진다 : 둘레의 적을 한꺼번에 날린다 */
+function rpgBlast(x, y, z){
+  Snd.play('thud', 1.0); Snd.play('gunShot', .9);
+  camShake = Math.max(camShake, 1.5);
+  /* 퍼지는 불빛 */
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1,10,8),
+    new THREE.MeshBasicMaterial({color:0xffd166, transparent:true, opacity:.9}));
+  ball.position.set(x,y,z); ball.userData.noHole = true; world.add(ball);
+  const lt = new THREE.PointLight(0xffa64a, 4, 30, 2); lt.position.set(x,y+1,z); world.add(lt);
+  let life = 0;
+  const f = (t,dt)=>{
+    life += dt;
+    ball.scale.setScalar(1 + life*22);
+    ball.material.opacity = Math.max(0, .9 - life*2.2);
+    lt.intensity = Math.max(0, 4 - life*10);
+    if(life > .45){ world.remove(ball); world.remove(lt); removeAnim(f); }
+  };
+  animated.push(f);
+  pickFx(x, y, z, 0xffb056);
+  /* 9m 안의 멧돼지를 쓸어버린다 */
+  for(let i=Boars.list.length-1;i>=0;i--){
+    const b = Boars.list[i];
+    if(Math.hypot(b.x-x, b.z-z) <= 9) Boars.damage(i, 1972);
+  }
+}
+
 /* 탄피 하나가 오른쪽 위로 튀어 올랐다가 땅에 떨어진다 */
 function ejectShell(p, right, up, fwd){
   const g = new THREE.Group();
@@ -2033,7 +2087,39 @@ const ITEMS = [
     reload:{ pos:[.050,-.150,-.660], rot:[.12,.40,-1.28] },
     /* roll : 총 자체를 돌리지 않고 화면 안에서만 세우는 각도 (윗면이 보이지 않는다) */
     reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.08,-.88,.14], roll:.75 },
-    make(){ const g=akModel(); g.scale.setScalar(.90); return g; } }
+    make(){ const g=akModel(); g.scale.setScalar(.90); return g; } },
+  /* 동굴 끝에서 얻는 무기 */
+  { id:'rpg', key:'5', ic:'🚀', nm:'RPG', range:60, dmg:1972, kill:true, gun:true, cd:1500,
+    have:()=> !!S.rpg,
+    pos:[.175,-.220,-.560], rot:[.03,-.05,.02],
+    aim:[0,-.070,-.640],
+    reload:{ pos:[.050,-.150,-.660], rot:[.12,.40,-1.28] },
+    reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.08,-.88,.14], roll:.75 },
+    make(){
+      const g = new THREE.Group();
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,1.15,10), M(0x3f4a3a));
+      tube.rotation.x = Math.PI/2; tube.position.z = -.10; g.add(tube);
+      const flare = new THREE.Mesh(new THREE.CylinderGeometry(.13,.075,.24,10), M(0x333c30));
+      flare.rotation.x = Math.PI/2; flare.position.z = .52; g.add(flare);
+      const head = new THREE.Mesh(new THREE.ConeGeometry(.115,.34,10), M(0x7a2f26));
+      head.rotation.x = -Math.PI/2; head.position.z = -.82; g.add(head);
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.22,8), M(0x5a5347));
+      neck.rotation.x = Math.PI/2; neck.position.z = -.64; g.add(neck);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(.05,.20,.09), M(0x2c2c2c));
+      grip.position.set(0,-.16,.10); grip.rotation.x = -.16; g.add(grip);
+      const grip2 = new THREE.Mesh(new THREE.BoxGeometry(.05,.15,.08), M(0x2c2c2c));
+      grip2.position.set(0,-.14,-.28); g.add(grip2);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(.035,.10,.16), M(0x2c2c2c));
+      sight.position.set(-.06,.11,-.16); g.add(sight);
+      const flash = new THREE.Group();
+      const f1 = new THREE.Mesh(new THREE.ConeGeometry(.10,.30,7),
+        new THREE.MeshBasicMaterial({color:0xffd08a, transparent:true, opacity:.95}));
+      f1.rotation.x = -Math.PI/2; f1.position.z = -.14; flash.add(f1);
+      flash.position.set(0,0,-.95); flash.visible = false; g.add(flash);
+      g.userData.flash = flash;
+      g.scale.setScalar(.92);
+      return g;
+    } }
 ];
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
 
@@ -2982,6 +3068,321 @@ function supplyCrate(x,z,rotY,loot){
   return g;
 }
 
+
+/* =========================================================
+   동굴 탐사와 보스전
+   총을 가진 사람만 들어갈 수 있는 숨은 공간입니다.
+   세계를 새로 만들지 않고 통째로 바꿔 끼웠다가 되돌립니다.
+   ========================================================= */
+let bosses = [];                     // 지금 살아 있는 큰 적들
+const CAVE = { on:false, phase:'walk', keep:null, back:{x:40,z:-24} };
+
+/* ---------- 모형 ---------- */
+function mammothModel(){
+  const g = new THREE.Group();
+  const FUR = 0x6b4a33, FUR2 = 0x836044, TUSK = 0xe8e0cc;
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(2.6,1), M(FUR));
+  body.scale.set(1.5,1.15,1.0); body.position.y = 3.4; g.add(body);
+  const hump = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0), M(FUR2));
+  hump.position.set(0,5.1,.6); hump.scale.set(1.3,.9,1.1); g.add(hump);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7,1), M(FUR));
+  head.position.set(0,3.3,-3.4); head.scale.set(1.1,1.0,.9); g.add(head);
+  /* 코 */
+  const trunk = new THREE.Group();
+  for(let i=0;i<6;i++){
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(.55-i*.06,.5-i*.06,.8,7), M(FUR));
+    t.position.set(0, -i*.62, -.16*i); t.rotation.x = .18*i; trunk.add(t);
+  }
+  trunk.position.set(0,2.9,-4.5); g.add(trunk);
+  /* 엄니 */
+  [-1,1].forEach(sx=>{
+    for(let i=0;i<4;i++){
+      const k = new THREE.Mesh(new THREE.CylinderGeometry(.22-i*.04,.20-i*.04,.9,7), M(TUSK));
+      k.position.set(sx*(.95+i*.22), 2.6-i*.30, -4.2-i*.30);
+      k.rotation.set(-.5+i*.28, 0, sx*.30); g.add(k);
+    }
+  });
+  /* 다리 */
+  [[-1.5,-1.6],[1.5,-1.6],[-1.5,1.9],[1.5,1.9]].forEach(q=>{
+    const l = new THREE.Mesh(new THREE.CylinderGeometry(.62,.72,2.5,7), M(FUR2));
+    l.position.set(q[0],1.25,q[1]); g.add(l);
+  });
+  /* 눈 */
+  [-1,1].forEach(sx=>{
+    const e = new THREE.Mesh(new THREE.SphereGeometry(.17,7,6),
+      new THREE.MeshBasicMaterial({color:0xffd24a}));
+    e.position.set(sx*.85, 3.9, -4.5); g.add(e);
+  });
+  g.userData.noHole = true;
+  return g;
+}
+
+/* 뼈다귀 아저씨 — 직접 만든 저폴리 모형입니다 */
+function sansModel(){
+  const g = new THREE.Group();
+  const BONE = 0xf2efe6, COAT = 0x2f4a8c, PANT = 0x2a2f3a, SHOE = 0xd8d3c6;
+  const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(.52,1), M(BONE));
+  skull.scale.set(1,.95,.92); skull.position.y = 2.05; g.add(skull);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(.66,.16,.52), M(BONE));
+  jaw.position.set(0,1.68,-.02); g.add(jaw);
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(.13,8,7),
+    new THREE.MeshBasicMaterial({color:0x151515}));
+  eyeL.position.set(-.22,2.10,-.42); g.add(eyeL);
+  const eyeR = eyeL.clone(); eyeR.position.x = .22; g.add(eyeR);
+  /* 왼쪽 눈에 켜지는 파란 불 */
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(.16,8,7),
+    new THREE.MeshBasicMaterial({color:0x6fe0ff, transparent:true, opacity:.95}));
+  glow.position.set(-.22,2.10,-.44); glow.visible = false; g.add(glow);
+  const lt = new THREE.PointLight(0x6fe0ff, 0, 9, 2); lt.position.set(-.22,2.1,-.6); g.add(lt);
+  /* 웃옷 · 바지 · 신발 */
+  const coat = new THREE.Mesh(new THREE.BoxGeometry(.95,1.05,.62), M(COAT));
+  coat.position.y = 1.15; g.add(coat);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(.80,.34,.42), M(COAT));
+  hood.position.set(0,1.66,.26); g.add(hood);
+  [-1,1].forEach(sx=>{
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(.26,.86,.30), M(COAT));
+    arm.position.set(sx*.60,1.10,0); g.add(arm);
+  });
+  const pants = new THREE.Mesh(new THREE.BoxGeometry(.86,.60,.56), M(PANT));
+  pants.position.y = .40; g.add(pants);
+  [-1,1].forEach(sx=>{
+    const sh = new THREE.Mesh(new THREE.BoxGeometry(.34,.20,.62), M(SHOE));
+    sh.position.set(sx*.24,.10,-.06); g.add(sh);
+  });
+  g.userData.noHole = true;
+  g.userData.glow = glow; g.userData.lt = lt;
+  return g;
+}
+
+function caveDoor(x,z){
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(7.4,7.2,.9), M(0x6d6259));
+  frame.position.y = 3.6; g.add(frame);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(6.2,6.2,.6), M(0x3d3630));
+  slab.position.set(0,3.4,-.3); g.add(slab);
+  for(let i=0;i<3;i++){
+    const b = new THREE.Mesh(new THREE.BoxGeometry(6.4,.30,.22), M(0x8a7d6d));
+    b.position.set(0,1.9+i*1.6,-.62); g.add(b);
+  }
+  const eye = new THREE.Mesh(new THREE.RingGeometry(.7,1.0,16),
+    new THREE.MeshBasicMaterial({color:0x6fe0ff, transparent:true, opacity:.8, side:THREE.DoubleSide}));
+  eye.position.set(0,3.6,-.66); g.add(eye);
+  g.position.set(x,0,z); world.add(g);
+  colliders.push({x, z, r:3.4});
+  animated.push((t)=>{ eye.scale.setScalar(1+Math.sin(t*2.2)*.12); });
+  return g;
+}
+
+/* ---------- 동굴 만들기 ---------- */
+function buildCave(){
+  /* 바닥 */
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(200,200), M(0x4a423c));
+  fl.rotation.x = -Math.PI/2; world.add(fl);
+
+  const wall = (x,z,r)=>{
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r,0), M(0x6a6058));
+    m.position.set(x, r*.35, z); m.rotation.set(rr(0,1), rr(0,TAU), rr(0,1));
+    world.add(m); colliders.push({x, z, r:r*.85});
+  };
+  /* 통로 : z 45 → -12, 폭 16 */
+  for(let z=48; z>=-14; z-=3.4){
+    wall(-9.5+rr(-1,1), z, rr(2.6,4.2));
+    wall( 9.5+rr(-1,1), z, rr(2.6,4.2));
+  }
+  /* 통로 안의 돌덩이 (거의 이것뿐입니다) */
+  for(let i=0;i<26;i++){
+    const x = rr(-7,7), z = rr(-10,46);
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(rr(.5,1.5),0), M(0x7b7168));
+    m.position.set(x, .4, z); m.rotation.set(rr(0,1),rr(0,TAU),rr(0,1));
+    world.add(m); colliders.push({x, z, r:1.0});
+  }
+  /* 보스방 : (0,-40) 둘레 벽 */
+  for(let i=0;i<46;i++){
+    const a = i/46*TAU;
+    if(Math.abs(a-Math.PI/2) < .30) continue;          // 통로로 이어지는 입구
+    wall(Math.cos(a)*30, -40+Math.sin(a)*30, rr(3.0,4.6));
+  }
+  for(let i=0;i<10;i++) wall(rr(-22,22), -40+rr(-22,22), rr(.9,1.7));
+
+  /* 나가는 곳 */
+  addStation(0, 49, { range:4.5, net:'solo',
+    label:()=>'🚪 동굴에서 나가기',
+    act(){ caveLeave(false); } });
+
+  /* 끝의 문 */
+  caveDoor(0, -13);
+  addStation(0, -10, { range:4.6, net:'solo',
+    label:()=> CAVE.phase==='walk' ? '🚪 문 열기' : '🚪 문',
+    ready:()=> CAVE.phase==='walk',
+    act(){ caveOpenDoor(); } });
+}
+
+/* 보스전 음악 : sounds/boss.mp3 를 넣어 두면 싸우는 동안 반복해서 흐릅니다.
+   파일이 없으면 아무 소리도 나지 않고 그냥 넘어갑니다. */
+let bossAudio = null;
+function bossMusic(on){
+  try{
+    if(on){
+      if(!sndOn) return;
+      if(!bossAudio){ bossAudio = new Audio('sounds/boss.mp3'); bossAudio.loop = true; bossAudio.volume = .45; }
+      bossAudio.currentTime = 0;
+      const pr = bossAudio.play(); if(pr && pr.catch) pr.catch(()=>{});
+    } else if(bossAudio){ bossAudio.pause(); bossAudio.currentTime = 0; }
+  }catch(e){}
+}
+
+/* ---------- 들어가고 나오기 ---------- */
+function caveEnter(){
+  if(Net.on){ toast('🚪 동굴은 혼자 탐험할 때만 들어갈 수 있어요'); return; }
+  if(!S.ak){ toast('🔦 캄캄해서 그냥은 못 들어가요'); return; }
+  /* 지금 세계를 통째로 치워 둔다 */
+  CAVE.keep = { world, colliders, interactables, animated, firePits, nidSeq, bulletHoles,
+                boars: Boars.list, px: player.x, pz: player.z,
+                bg: scene.background, fog: scene.fog };
+  scene.remove(world);
+  world = new THREE.Group(); scene.add(world);
+  colliders = []; interactables = []; animated = []; firePits = []; bulletHoles = [];
+  nidSeq = 0; Boars.list = []; bosses = [];
+  CAVE.on = true; CAVE.phase = 'walk';
+  scene.background = new THREE.Color(0x0a0a0e);
+  scene.fog = new THREE.Fog(0x0a0a0e, 12, 62);
+  hemi.intensity = 0.22; sun.intensity = 0.10;
+  caveLamp.intensity = 1.5;
+  buildCave();
+  player.x = 0; player.z = 46; yaw = Math.PI; pitch = -0.02;
+  Snd.play('eraShift', .7);
+  centerMsg('<h2>🕳️ 동굴</h2><p>깊고 캄캄합니다. 돌 말고는 아무것도 없어요.<br>'+
+            '<b>안쪽 끝</b>에 무언가 있는 것 같습니다…</p>', 4200);
+}
+
+function caveLeave(won){
+  if(!CAVE.on) return;
+  const k = CAVE.keep;
+  scene.remove(world);
+  world = k.world; scene.add(world);
+  colliders = k.colliders; interactables = k.interactables; animated = k.animated;
+  firePits = k.firePits; nidSeq = k.nidSeq; bulletHoles = k.bulletHoles;
+  Boars.list = k.boars; bosses = [];
+  scene.background = k.bg; scene.fog = k.fog;
+  caveLamp.intensity = 0; bossMusic(false);
+  CAVE.on = false; CAVE.phase = 'walk'; CAVE.keep = null;
+  player.x = CAVE.back.x; player.z = CAVE.back.z; yaw = 0;
+  elBoss.style.display = 'none';
+  Sky.p = -1;                                   // 바깥 밝기를 다시 계산하게 한다
+  if(won) centerMsg('<h2>🚀 RPG 를 얻었습니다!</h2>'+
+    '<p>아이템창에서 들 수 있어요. 한 발에 <b>1972</b>.</p>', 5000);
+}
+
+/* ---------- 문을 열면 ---------- */
+function caveOpenDoor(){
+  if(CAVE.phase !== 'walk') return;
+  CAVE.phase = 'fight';
+  Snd.play('thud', 1.0); camShake = 1.4;
+
+  /* 뼈다귀 아저씨 */
+  const sg = sansModel(); sg.position.set(0,0,-58); world.add(sg);
+  const sans = { kind:'sans', g:sg, x:0, z:-58, hp:3000, max:3000, r:1.5,
+                 alive:true, vuln:false, blink:2.5 };
+  bosses.push(sans);
+
+  /* 매머드 */
+  const mg = mammothModel(); mg.position.set(0,0,-46); world.add(mg);
+  bosses.push({ kind:'mammoth', g:mg, x:0, z:-46, hp:150000, max:150000, r:3.6,
+                alive:true, vuln:true, hitCd:0 });
+
+  /* 멧돼지 20마리 */
+  for(let i=0;i<20;i++){
+    const a = i/20*TAU, rr2 = 14 + (i%3)*4;
+    Boars.spawnAt(Math.cos(a)*rr2, -40 + Math.sin(a)*rr2);
+  }
+  bossMusic(true);
+  centerMsg('<h2>💀 ？？？</h2><p>"어이. 여기서부턴 못 지나가."</p>'+
+            '<p style="opacity:.85">매머드 한 마리와 멧돼지 스무 마리가 나타났다!</p>', 4200);
+  toast('💀 싸움이 시작되었어요!');
+}
+
+/* ---------- 큰 적이 맞았을 때 ---------- */
+function bossHit(b, dmg){
+  if(!b.alive || !b.vuln) return false;
+  b.hp -= dmg;
+  pickFx(b.x, b.kind==='mammoth' ? 3.5 : 2.0, b.z, 0xffd76a);
+  if(b.hp <= 0){
+    b.hp = 0; b.alive = false;
+    world.remove(b.g);
+    if(b.kind === 'mammoth'){
+      Snd.play('thud', 1.0); camShake = 1.6;
+      toast('🐘 매머드를 쓰러뜨렸어요!');
+    } else {
+      Snd.play('levelUp', .9);
+      S.rpg = true; drawHotbar(); bossMusic(false);
+      CAVE.phase = 'done';
+      centerMsg('<h2>💀 …</h2><p>"봐준 거야."</p>'+
+                '<p style="opacity:.85">그가 남긴 <b>RPG</b> 를 주웠다.</p>', 4000);
+      setTimeout(()=>caveLeave(true), 4200);
+    }
+  } else {
+    Snd.throttle('boarGrowl', 260, .5);
+  }
+  return true;
+}
+
+/* ---------- 매 프레임 ---------- */
+function caveUpdate(dt){
+  if(!CAVE.on){ elBoss.style.display = 'none'; return; }
+  const mam  = bosses.find(b=>b.kind==='mammoth');
+  const sans = bosses.find(b=>b.kind==='sans');
+
+  if(CAVE.phase === 'fight' && mam && mam.alive && !paused && !dead){
+    /* 매머드가 천천히 다가와 들이받는다 */
+    const dx = player.x-mam.x, dz = player.z-mam.z, d = Math.hypot(dx,dz) || 1;
+    if(d > 4.2){ mam.x += dx/d*3.2*dt; mam.z += dz/d*3.2*dt; }
+    mam.g.position.set(mam.x, 0, mam.z);
+    mam.g.rotation.y = Math.atan2(dx, dz) + Math.PI;
+    mam.hitCd = Math.max(0, mam.hitCd - dt);
+    if(d < 5.0 && mam.hitCd <= 0){ mam.hitCd = 1.6; hurt(50); }
+  }
+  if(sans && sans.alive && !paused && !dead){
+    sans.g.position.set(sans.x, Math.sin(clock.elapsedTime*1.6)*.18, sans.z);
+    sans.g.rotation.y = Math.atan2(player.x-sans.x, player.z-sans.z) + Math.PI;
+    if(sans.vuln){
+      /* 가만히 있지 않는다 : 가끔 다른 자리로 옮긴다 */
+      sans.blink -= dt;
+      if(sans.blink <= 0){
+        sans.blink = 1.6 + Math.random()*1.6;
+        pickFx(sans.x, 1.6, sans.z, 0x6fe0ff);
+        const a = Math.random()*TAU, rr3 = 12 + Math.random()*12;
+        sans.x = Math.cos(a)*rr3; sans.z = -40 + Math.sin(a)*rr3;
+        Snd.play('metalStir', .5);
+      }
+    }
+  }
+  /* 매머드와 멧돼지를 다 잡으면 그때부터 뼈다귀 아저씨를 맞힐 수 있다 */
+  const left = Boars.list.length;
+  if(CAVE.phase === 'fight' && sans && !sans.vuln && (!mam || !mam.alive) && left === 0){
+    sans.vuln = true;
+    sans.g.userData.glow.visible = true;
+    sans.g.userData.lt.intensity = 2.2;
+    Snd.play('nightFall', .9);
+    centerMsg('<h2>💀 !</h2><p>"…진심으로 하는 거구나."</p>'+
+              '<p style="opacity:.85">이제 그를 맞힐 수 있다.</p>', 3600);
+  }
+
+  /* 체력 막대 */
+  if(CAVE.phase === 'fight'){
+    elBoss.style.display = 'block';
+    if(sans && sans.vuln){
+      elBossName.textContent = '💀 ？？？';
+      elBossFill.style.width = (sans.hp/sans.max*100) + '%';
+      elBossSub.textContent = Math.max(0,Math.round(sans.hp)) + ' / ' + sans.max;
+    } else if(mam){
+      elBossName.textContent = '🐘 매머드';
+      elBossFill.style.width = (Math.max(0,mam.hp)/mam.max*100) + '%';
+      elBossSub.textContent = Math.max(0,Math.round(mam.hp)).toLocaleString() +
+        ' / ' + mam.max.toLocaleString() + '   ·   🐗 멧돼지 ' + left + '마리 남음';
+    }
+  } else elBoss.style.display = 'none';
+}
+
 /* ---------------------------------------------------------
    이스터에그 : 돌담 바깥 구석에 숨어 있는 낡은 상자
    (시대를 만든 다음 맨 마지막에 놓아서 다른 배치를 건드리지 않습니다)
@@ -3453,6 +3854,11 @@ function buildPaleo(){
 
   /* 동굴과 모닥불 자리 */
   cave(40,-30);
+  /* 총이 있으면 안으로 들어갈 수 있다 */
+  addStation(40,-24,{ range:5.2, net:'solo',
+    label:()=> S.ak ? '🕳️ 동굴로 들어가기' : '🕳️ 동굴 (너무 캄캄해요)',
+    ready:()=> !!S.ak,
+    act(){ CAVE.back = {x:40, z:-24}; caveEnter(); } });
   campfireRing(0,36,{needWood:true});
   rock(3.4,37.2,.5,0x8d8378); rock(-3,35,.45,0x8d8378);
   /* 야영지 옆 나무 상자 */
@@ -5391,6 +5797,11 @@ function attack(){
     if(r === 'kill'){ killed++; killN.push(b.nid); } else stunN.push(b.nid);
     hit++;
   }
+  for(const bs of bosses){
+    if(!bs.alive || !bs.vuln) continue;
+    if(Math.hypot(bs.x-player.x, bs.z-player.z) > it.range + bs.r) continue;
+    bossHit(bs, it.dmg || 75); hit++;
+  }
   if(hit && Net.on && !Net.host) Net.send({t:'fx', kill:killN, stun:stunN});
   if(hit){
     if(killed){
@@ -5545,9 +5956,30 @@ function shoot(it, now){
   }
   if(best >= 0 && !ads && Math.random() < 0.25) best = -1;  // 견착 없이 쏘면 가끔 빗나간다
 
+  /* 큰 적(매머드 · 뼈다귀 아저씨)도 겨눈 쪽에 있으면 맞는다 */
+  let bTarget = null, bd2 = bd;
+  for(const bs of bosses){
+    if(!bs.alive || !bs.vuln) continue;
+    v.set(bs.x-eye.x, (bs.kind==='mammoth'?3.2:1.9)-eye.y, bs.z-eye.z);
+    const d = v.length();
+    if(d > range || d < .001) continue;
+    v.divideScalar(d);
+    const off  = Math.acos(Math.max(-1, Math.min(1, v.dot(fwd))));
+    const half = Math.atan2(bs.r, d) + spread;
+    if(off > half) continue;
+    if(d < bd2){ bd2 = d; bTarget = bs; }
+  }
+  if(bTarget){
+    bulletTracer(mv.x,mv.y,mv.z, bTarget.x, bTarget.kind==='mammoth'?3.2:1.9, bTarget.z);
+    if(it.id === 'rpg') rpgBlast(bTarget.x, 1.5, bTarget.z);
+    bossHit(bTarget, it.dmg || 150);
+    return;
+  }
+
   if(best >= 0){
     const b = Boars.list[best];
     bulletTracer(mv.x,mv.y,mv.z, b.x, .85, b.z);
+    if(it.id === 'rpg') rpgBlast(b.x, .9, b.z);
     Boars.damage(best, it.dmg || BOAR_HP);
     if(Net.on && !Net.host) Net.send({t:'fx', kill:[b.nid], stun:[]});
     Snd.play('boarHit', .8);
@@ -5563,7 +5995,8 @@ function shoot(it, now){
     const at = bulletImpact(eye, dir, far);          // 맞은 자리 (없으면 null)
     const p2 = at || eye.clone().addScaledVector(dir, far);
     bulletTracer(mv.x,mv.y,mv.z, p2.x, p2.y, p2.z);  // 총알은 박힌 자리에서 멈춘다
-    if(at) Snd.throttle('stoneHit', 90, .30);
+    if(it.id === 'rpg') rpgBlast(p2.x, p2.y, p2.z);
+    else if(at) Snd.throttle('stoneHit', 90, .30);
   }
 }
 
@@ -5769,7 +6202,7 @@ addEventListener('keydown',e=>{
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=true;
   if(e.code==='KeyE'||e.code==='Space'){ e.preventDefault(); tryInteract(); }
   if(e.code==='KeyF'){ e.preventDefault(); eat(); }
-  for(let n=1;n<=4;n++){
+  for(let n=1;n<=5;n++){
     if(e.code==='Digit'+n || e.code==='Numpad'+n){ e.preventDefault(); equipSlot(n); }
   }
   if(e.code==='KeyR'){ e.preventDefault(); reload(); }
@@ -5989,6 +6422,7 @@ sndBtn.addEventListener('click',()=>{
   sndOn=!sndOn;
   sndBtn.textContent = sndOn?'🔊':'🔇';
   Snd.mute(!sndOn);
+  if(!sndOn) bossMusic(false); else if(CAVE.on && CAVE.phase==='fight') bossMusic(true);
 });
 
 /* 상호작용 버튼 */
@@ -6127,6 +6561,7 @@ function tick(){
   updateReload(dt);
   updateHand(dt, t);
   updateHp(dt);
+  caveUpdate(dt);
   updateHunger(dt);
 
   const anims=animated.slice(); for(const f of anims) f(t,dt);
