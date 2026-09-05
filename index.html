@@ -697,8 +697,9 @@ const SOUNDS = {
      파일이 없으면 아래의 내장 합성음이 그대로 나옵니다. (소리-넣는법.md 참고) */
   gunShot:       { url:'sounds/gunShot.mp3', vol:0.55 },   // 발사
   reload:        { url:'sounds/reload.mp3',  vol:0.55 },   // 장전 전체 (탄창+노리쇠)
-  gunDry:        { url:'sounds/gunDry.mp3',  vol:0.35 },   // 빈 탄창 : 찰칵
-  shell:         { url:'sounds/shell.mp3',   vol:0.22 },   // 탄피가 바닥에 떨어진다
+  /* 아래는 전부 내장 합성음입니다 */
+  gunDry:        { url:null, vol:0.35 },   // 빈 탄창 : 찰칵
+  shell:         { url:null, vol:0.22 },   // 탄피가 바닥에 떨어진다
   /* 아래는 reload.mp3 가 없을 때 순서대로 나는 내장 소리입니다 */
   gunCock:       { url:null, vol:0.40 },
   gunTail:       { url:null, vol:0.30 },
