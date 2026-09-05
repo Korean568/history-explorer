@@ -3291,6 +3291,16 @@ function caveLeave(won){
     '<p>아이템창에서 들 수 있어요. 한 발에 <b>1972</b>.</p>', 5000);
 }
 
+/* 동굴을 완전히 접는다 (시대를 다시 시작할 때) */
+function caveReset(){
+  [CAVE.keep, CAVE.saved].forEach(c=>{
+    if(c && c.world) c.world.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+  });
+  CAVE.on = false; CAVE.phase = 'walk'; CAVE.keep = null; CAVE.saved = null;
+  bosses = []; caveLamp.intensity = 0; bossMusic(false);
+  if(elBoss) elBoss.style.display = 'none';
+}
+
 /* ---------- 문을 열면 ---------- */
 function caveOpenDoor(){
   if(CAVE.phase !== 'walk') return;
@@ -6086,6 +6096,7 @@ function netRespawn(){
   dead = false; paused = false;
   player.x = era.start.x; player.z = era.start.z; yaw = 0; pitch = -.05;
   spreadStart();
+  if(CAVE.on) caveLeave(false);       // 동굴 안이었다면 먼저 밖으로 나온다
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
   hpSet(PLAYER_HP); hurtT = 0;
@@ -6140,6 +6151,7 @@ function refresh(){
    9. 시대 시작
    ========================================================= */
 function startEra(){
+  caveReset();                       // 동굴 안에서 죽었더라도 깨끗이 정리한다
   const era=ERAS[S.eraIndex];
   seed = 20260820 + S.eraIndex*7777;
   resetCounts(); S.mission={};
