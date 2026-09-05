@@ -1983,7 +1983,8 @@ const ITEMS = [
        mag  — 탄창을 갈아 끼울 때 (총 아래쪽이 보이게 눕힌다)
        bolt — 노리쇠를 당길 때   (총 오른쪽이 보이게 돌린다) */
     reload:{ pos:[.050,-.150,-.660], rot:[.12,.40,-1.28] },
-    reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.34,-.88,.14] },
+    /* roll : 총 자체를 돌리지 않고 화면 안에서만 세우는 각도 (윗면이 보이지 않는다) */
+    reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.08,-.88,.14], roll:.75 },
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } }
 ];
 for(const it of ITEMS){ it.view = it.make(); it.view.visible=false; camera.add(it.view); }
@@ -2011,7 +2012,7 @@ function updateHand(dt, t){
     const rx = R[0]+(0-R[0])*k,    ry = R[1]+(0-R[1])*k,    rz = R[2]+(0-R[2])*k;
     /* 장전 : 총을 몸쪽으로 눕히고 탄창을 갈아 끼운 뒤 노리쇠를 당긴다 */
     const U = it.view.userData;
-    let qx=px, qy=py, qz=pz, ax=rx, ay=ry, az=rz;
+    let qx=px, qy=py, qz=pz, ax=rx, ay=ry, az=rz, rollZ=0;
     if(reloadT>0){
       const q = 1 - reloadT/reloadDur;                       // 0 → 1
       const seg = (a,b)=> Math.max(0, Math.min(1, (q-a)/(b-a)));
@@ -2021,6 +2022,7 @@ function updateHand(dt, t){
       /* ② 노리쇠 자세 : 탄창을 끼운 뒤 ~ 철컥 하고 끝날 때까지 */
       const wB = ease(seg(RC.inn+.05, RC.pull-.10)) - ease(seg(RC.rel, Math.min(1, RC.rel+.10)));
       const A = it.reload, B = it.reloadBolt;
+      rollZ = (B.roll||0) * wB;                    // 화면 안에서 세우는 각도
       qx += (A.pos[0]-qx)*wA + (B.pos[0]-qx)*wB;
       qy += (A.pos[1]-qy)*wA + (B.pos[1]-qy)*wB;
       qz += (A.pos[2]-qz)*wA + (B.pos[2]-qz)*wB;
@@ -2047,6 +2049,9 @@ function updateHand(dt, t){
     }
     it.view.position.set(qx+e*.020*(1-k*.6), qy+bob-e*.006, qz+e*.075);
     it.view.rotation.set(ax+e*.26, ay, az+bob*.5);
+    /* 화면 기준으로 한 번 더 굴린다 : 총을 세워도 윗면이 보이지 않는다 */
+    if(rollZ) it.view.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), rollZ));
     return;
   }
   if(swingT>0){
