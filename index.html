@@ -404,6 +404,15 @@
   #hungerWrap{position:absolute;left:14px;bottom:calc(92px + env(safe-area-inset-bottom));
     display:none;align-items:center;gap:6px;background:rgba(255,255,255,.9);
     border:2.5px solid var(--bark);border-radius:11px;padding:5px 10px;width:max-content;}
+  #hpWrap{position:absolute;left:14px;bottom:calc(130px + env(safe-area-inset-bottom));
+    display:none;align-items:center;gap:6px;background:rgba(255,255,255,.9);
+    border:2.5px solid var(--bark);border-radius:11px;padding:5px 10px;width:max-content;}
+  #hpWrap .bar{width:74px;height:9px;border-radius:6px;background:#e3d5bb;overflow:hidden;}
+  #hpWrap .bar i{display:block;height:100%;border-radius:6px;width:100%;
+    background:linear-gradient(90deg,#e05a4c,#f0857a);transition:width .25s;}
+  #hpWrap span:last-child{font-size:12px;font-weight:800;color:var(--ink);min-width:22px;text-align:right;}
+  #hpWrap.low{animation:dpul .9s infinite;}
+  #hpWrap.low .bar i{background:linear-gradient(90deg,#c02a1c,#e05a4c);}
   #hungerWrap .bar{width:74px;height:9px;border-radius:6px;background:#e3d5bb;overflow:hidden;}
   #hungerWrap .bar i{display:block;height:100%;border-radius:6px;width:100%;
     background:linear-gradient(90deg,#7fbf4a,#f2c14e);transition:width .3s,background .3s;}
@@ -562,6 +571,7 @@
   <div id="stats">
     <div id="chips"></div>
   </div>
+  <div id="hpWrap"><span>❤️</span><span class="bar"><i id="hpBar"></i></span><span id="hpTxt">100</span></div>
   <div id="hungerWrap" title="식량 먹기"><span>🍖</span><span class="bar"><i id="hungerBar"></i></span><span id="hungerTxt">100%</span><span class="eat" id="eatKey">F</span></div>
   <div id="guide">
     <div id="gAvatar">🤖</div>
@@ -629,6 +639,7 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elGuide=$('#guide'), elGMsg=$('#gMsg'), elGArrow=$('#gArrow'),
       elGDist=$('#gDist'), elGNav=$('#gNav'), elGAvatar=$('#gAvatar'),
       elHunger=$('#hungerWrap'), elHungerBar=$('#hungerBar'), elHungerTxt=$('#hungerTxt'),
+      elHp=$('#hpWrap'), elHpBar=$('#hpBar'), elHpTxt=$('#hpTxt'),
       elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party'),
       elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn'),
       elAmmo=$('#ammo');
@@ -1105,7 +1116,16 @@ function pickFx(x,y,z,col){
    1-B. 낮과 밤 (하루가 흐른다)
    ========================================================= */
 const DAY_SEC   = 90;                // 낮 1분 30초
-const NIGHT_SEC  = 120;              // 밤 2분
+const NIGHT_SEC  = 90;               // 밤 1분 30초
+/* ---------- 체력 ---------- */
+const PLAYER_HP   = 100;         // 사람의 체력
+const BOAR_HP     = 150;         // 멧돼지의 체력
+const BOAR_DMG    = 34;          // 멧돼지에게 한 번 받히면 줄어드는 체력 (세 번이면 쓰러진다)
+const BOAR_HIT_CD = 1.2;         // 멧돼지가 다시 받기까지 걸리는 시간(초)
+const HEAL_DELAY  = 8;           // 다치지 않고 이만큼 지나면
+const HEAL_RATE   = 3;           //   1초에 이만큼씩 낫는다
+const EAT_HEAL    = 20;          // 식량을 먹으면 함께 회복되는 체력
+let   hurtT = 0;                 // 마지막으로 다친 뒤 지난 시간
 const CYCLE      = DAY_SEC + NIGHT_SEC;
 const FADE_SEC   = 8;                // 해질녘 · 새벽에 걸리는 시간(초)
 const WOOD_NEED  = 5;                // 모닥불에 불을 피우려면 벌목해야 하는 나무 수
@@ -1377,9 +1397,21 @@ const Boars = {
     pickFx(b.x, 1.5, b.z, 0xffe27a);
     this.addStunFx(b);
   },
-  /* 동검에 맞아 쓰러진다 */
-  kill(i){
+  /* 도구로 때린다. 체력이 다 닳으면 쓰러지고 가죽을 남긴다.
+     돌려주는 값 : 'kill' 이면 쓰러졌고, 'hit' 이면 아직 살아 있다. */
+  damage(i, amount){
+    const b = this.list[i];
+    if(!b) return null;
+    b.hp = (b.hp==null ? BOAR_HP : b.hp) - amount;
+    if(b.hp <= 0){ this.kill(i, true); return 'kill'; }
+    pickFx(b.x, 1.2, b.z, 0xd4423f);
+    Snd.play('boarGrowl', .8);
+    return 'hit';
+  },
+  /* 쓰러진다. drop 이 true 면 그 자리에 가죽을 남긴다. */
+  kill(i, drop){
     const b=this.list[i]; this.list.splice(i,1);
+    if(drop) dropHide(b.x, b.z);
     const g=b.g; let a=0, life=0;
     pickFx(b.x, 1.0, b.z, 0xffd76a);
     animated.push(function f(t,dt){
@@ -1413,7 +1445,7 @@ const Boars = {
     g.position.set(x,0,z); g.scale.setScalar(.25);
     this.list.push({ nid:this.seq++, g, x, z, tx:x, tz:z,
                      dir:Math.random()*TAU, tdir:0, phase:Math.random()*TAU,
-                     state:'chase', stun:0, grow:.25,
+                     state:'chase', stun:0, grow:.25, hp:BOAR_HP, hitCd:0,
                      wild: !!wild, life: wild ? 34 : 1e9,
                      speed: BOAR_SPEED + Math.random()*BOAR_SPEED_VAR });
     Snd.play('boarGrowl', .7);
@@ -1491,7 +1523,8 @@ const Boars = {
         for(const e of b.g.userData.eyes) e.material.color.setHex(ec);
         const dG = Math.hypot(player.x-b.x, player.z-b.z);
         if(b.state==='chase'){ chasing = true; closest = Math.min(closest, dG); }
-        if(b.state==='chase' && dG<1.75 && !dead){ gameOver(); return; }
+        b.hitCd = Math.max(0, (b.hitCd||0) - dt);
+        if(b.state==='chase' && dG<1.75 && !dead && b.hitCd<=0){ b.hitCd = BOAR_HIT_CD; hurt(BOAR_DMG); }
         continue;
       }
 
@@ -1577,8 +1610,15 @@ const Boars = {
       const ec = Sky.night>0.35 ? 0xff5a28 : 0x7a2a12;
       for(const e of b.g.userData.eyes) e.material.color.setHex(ec);
 
-      /* 잡혔다! */
-      if(b.state==='chase' && d<1.75 && !dead){ gameOver(); return; }
+      /* 받혔다! 체력이 깎인다 */
+      b.hitCd = Math.max(0, (b.hitCd||0) - dt);
+      if(b.state==='chase' && d<1.75 && !dead && b.hitCd<=0){
+        b.hitCd = BOAR_HIT_CD;
+        hurt(BOAR_DMG);
+        /* 받은 힘에 조금 밀려난다 */
+        const px2 = (b.x-player.x)/(d||1), pz2 = (b.z-player.z)/(d||1);
+        b.x += px2*1.1; b.z += pz2*1.1;
+      }
     }
 
     /* 소리 · 경고 */
@@ -1934,7 +1974,7 @@ function bulletTracer(x1,y1,z1,x2,y2,z2){
 }
 
 const ITEMS = [
-  { id:'tool', key:'1', ic:'🔨', nm:'뗀석기', range:7.5, kill:false,
+  { id:'tool', key:'1', ic:'🔨', nm:'뗀석기', range:5.5, dmg:75, kill:false,
     have:()=> (S.c.tool||0) >= 1,
     pos:[.47,-.46,-.86], rot:[-.24,.44,.42],
     make(){
@@ -1947,7 +1987,7 @@ const ITEMS = [
       chip.position.set(-.16,.02,.10); g.add(chip);
       g.scale.setScalar(.62); return g;
     } },
-  { id:'polish', key:'2', ic:'🪓', nm:'간석기', range:7.5, kill:false,
+  { id:'polish', key:'2', ic:'🪓', nm:'간석기', range:5.5, dmg:75, kill:false,
     have:()=> (S.c.polish||0) >= 1,
     pos:[.50,-.52,-.95], rot:[-.30,.48,.72],
     make(){
@@ -1962,7 +2002,7 @@ const ITEMS = [
       }
       g.scale.setScalar(.60); return g;
     } },
-  { id:'sword', key:'3', ic:'⚔️', nm:'비파형 동검', range:10, kill:true,
+  { id:'sword', key:'3', ic:'⚔️', nm:'비파형 동검', range:7.5, dmg:BOAR_HP, kill:true,
     have:()=> !!S.armed,
     pos:[.52,-.50,-1.00], rot:[-.34,.50,.88],
     make(){
@@ -1977,7 +2017,7 @@ const ITEMS = [
       g.scale.setScalar(.42); return g;
     } },
   /* 이스터에그 : 지도 밖 상자에서 찾을 수 있다 */
-  { id:'ak', key:'4', ic:'🔫', nm:'AK-47', range:45, kill:true, gun:true, cd:180,
+  { id:'ak', key:'4', ic:'🔫', nm:'AK-47', range:45, dmg:BOAR_HP, kill:true, gun:true, cd:180,
     have:()=> !!S.ak,
     pos:[.175,-.230,-.500], rot:[.02,-.045,.02],
     aim:[0,-.0775,-.620],                       // 조준할 때 : 가늠자를 화면 한가운데로
@@ -2842,6 +2882,17 @@ function stickItem(x,z){
   b.rotation.z=Math.PI/2.6; b.position.set(.45,.25,.12); g.add(b);
   g.position.set(x,0,z); g.rotation.y=rr(0,TAU); world.add(g); return g;
 }
+/* 쓰러진 멧돼지가 남기는 가죽 */
+function dropHide(x, z){
+  const m = hideItem(x, z);
+  glow(m, 0x241708); floatItem(m, .07, 0);
+  const it = addPickup(m, '🟤 가죽 줍기', ()=>{
+    Snd.play('hideGet'); S.c.hide++;
+    toast(`🟤 가죽 ${Math.min(S.c.hide,2)}/2`); refresh();
+  }, 3.0, 0x9a6b40, 'hide');
+  it.net = 'solo';          // 사람마다 따로 줍는다 (서로 번호가 어긋나지 않게)
+  return m;
+}
 function hideItem(x,z){
   const g=new THREE.Group();
   const h=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.12,7),M(0x9a6b40));
@@ -3125,6 +3176,7 @@ function resetCounts(){ S.c = {food:0,stick:0,hide:0,tool:0,polish:0,wood:0,seed
 const HUNGER_SEC = 500;
 const HUNGER_RUN = 2;
 const STARVE_SEC = 20;           // 배고픔이 0 이 된 뒤 버틸 수 있는 시간(초)
+
 let hungerMul = 1;               // 배가 고프면 느려진다
 let hungerWarn = 0;
 function hungerOn(){ return S.eraIndex >= 1; }
@@ -3139,6 +3191,7 @@ function eat(){
   }
   if(S.hunger >= 99){ Guide.say('🍖 아직 배가 불러요.', 2.2); return; }
   S.c.food--; S.hunger = Math.min(100, S.hunger + 40); refresh();
+  if(S.hp != null && S.hp < PLAYER_HP) hpSet(S.hp + EAT_HEAL);
   Snd.play('pick'); Buddy.cheer(); hungerWarn = 8;
   toast(`🍖 식량을 먹었어요 (남은 식량 ${S.c.food}개)`);
 }
@@ -3150,15 +3203,50 @@ function placeHunger(dt){
   if(hungerPosT > 0) return;
   hungerPosT = 0.25;
   const gh = (elGuide && getComputedStyle(elGuide).display !== 'none') ? elGuide.offsetHeight : 0;
-  const px = (gh ? gh + 22 : 24);
-  if(elHunger.dataset.b !== String(px)){
-    elHunger.dataset.b = String(px);
-    elHunger.style.bottom = 'calc(' + px + 'px + env(safe-area-inset-bottom))';
+  const base = (gh ? gh + 22 : 24);
+  const hungerOn2 = getComputedStyle(elHunger).display !== 'none';
+  const hpPx = hungerOn2 ? base + elHunger.offsetHeight + 8 : base;
+  if(elHunger.dataset.b !== String(base)){
+    elHunger.dataset.b = String(base);
+    elHunger.style.bottom = 'calc(' + base + 'px + env(safe-area-inset-bottom))';
+  }
+  if(elHp.dataset.b !== String(hpPx)){
+    elHp.dataset.b = String(hpPx);
+    elHp.style.bottom = 'calc(' + hpPx + 'px + env(safe-area-inset-bottom))';
   }
 }
 
+/* ---------- 체력 ---------- */
+function hpSet(v){
+  S.hp = Math.max(0, Math.min(PLAYER_HP, v));
+  const h = Math.round(S.hp);
+  elHpBar.style.width = (S.hp/PLAYER_HP*100) + '%';
+  elHpTxt.textContent = h;
+  elHp.classList.toggle('low', S.hp <= 34);
+}
+/* 다치면 화면이 붉어지고 체력이 줄어든다 */
+function hurt(amount){
+  if(dead || paused) return;
+  hurtT = 0;
+  hpSet((S.hp==null?PLAYER_HP:S.hp) - amount);
+  camShake = Math.max(camShake, .8);
+  Snd.play('boarHit', .8);
+  elHurt.style.transition = 'opacity .12s';
+  elHurt.style.opacity = '.55';
+  setTimeout(()=>{ if(!dead) elHurt.style.opacity = '0'; }, 160);
+  if(S.hp <= 0) gameOver('boar');
+}
+/* 다치지 않고 한참 지나면 조금씩 낫는다 */
+function updateHp(dt){
+  elHp.style.display = 'flex';
+  if(paused || dead) return;
+  if(S.hp == null) hpSet(PLAYER_HP);
+  hurtT += dt;
+  if(hurtT > HEAL_DELAY && S.hp < PLAYER_HP) hpSet(S.hp + HEAL_RATE*dt);
+}
+
 function updateHunger(dt){
-  if(!hungerOn()){ elHunger.style.display='none'; hungerMul=1; return; }
+  if(!hungerOn()){ elHunger.style.display='none'; hungerMul=1; placeHunger(dt); return; }
   elHunger.style.display='flex';
   placeHunger(dt);
   if(!paused && !dead){
@@ -3211,7 +3299,7 @@ const ERAS = [
      tip:'물고기와 열매를 모아요. 다음 시대까지 가져갈 수 있어요!'},
     {id:'hut',  t:'막집 만들기',
      prog:()=>`나뭇가지 ${S.c.stick}/3 · 가죽 ${S.c.hide}/2`,
-     tip:'나뭇가지 3개와 가죽 2장을 모아 막집을 지어요.',
+     tip:'나뭇가지 3개를 줍고, 멧돼지를 잡아 가죽 2장을 얻으세요.',
      at:()=>{ if(S.c.stick<3){ const i=nearestTagged('stick'); if(i) return i; }
               if(S.c.hide<2){ const i=nearestTagged('hide'); if(i) return i; }
               return {x:-16,z:34}; }}
@@ -3391,11 +3479,6 @@ function buildPaleo(){
     const m=stickItem(q[0],q[1]);
     glow(m,0x1e1408); floatItem(m,.08,0);
     addPickup(m,'🪵 나뭇가지 줍기',()=>{ Snd.play('woodGet'); S.c.stick++; toast(`나뭇가지 ${Math.min(S.c.stick,3)}/3`); refresh(); },3.0,0xb98a55,'stick');
-  });
-  [[32,-24],[38,-18],[46,-28],[28,-34]].forEach(q=>{
-    const m=hideItem(q[0],q[1]);
-    glow(m,0x241708); floatItem(m,.07,0);
-    addPickup(m,'🟤 가죽 줍기',()=>{ Snd.play('hideGet'); S.c.hide++; toast(`가죽 ${Math.min(S.c.hide,2)}/2`); refresh(); },3.0,0x9a6b40,'hide');
   });
 
   const HX=-16, HZ=34;
@@ -5293,24 +5376,25 @@ function attack(){
   atkAt = now; swingT = 0.36;
   Snd.play(it.kill ? 'metalStir' : 'stoneMove', 1.0);
   camShake = Math.max(camShake, .32);
-  let hit=0; const killN=[], stunN=[];
+  let hit=0, killed=0; const killN=[], stunN=[];
   for(let i=Boars.list.length-1;i>=0;i--){
     const b=Boars.list[i];
     if(Math.hypot(b.x-player.x, b.z-player.z) > it.range) continue;
-    if(it.kill){ killN.push(b.nid); Boars.kill(i); }
-    else { stunN.push(b.nid); Boars.stun(i); }
+    if(!it.kill) Boars.stun(i);                       // 돌도구는 먼저 기절시킨다
+    const r = Boars.damage(i, it.dmg || 75);
+    if(r === 'kill'){ killed++; killN.push(b.nid); } else stunN.push(b.nid);
     hit++;
   }
   if(hit && Net.on && !Net.host) Net.send({t:'fx', kill:killN, stun:stunN});
   if(hit){
-    if(it.kill){
+    if(killed){
       Snd.play('metalSuccess', .9);
-      toast(`⚔️ 멧돼지 ${hit}마리를 물리쳤어요!`);
-      Guide.cheer('⚔️ <b>비파형 동검</b>으로 멧돼지를 물리쳤어요! 청동 도구는 아주 강했답니다.', 3.6);
+      toast(`🟤 멧돼지 ${killed}마리를 잡았어요! 가죽을 남겼습니다`);
+      Guide.cheer('🟤 멧돼지를 잡았어요! 사람들은 고기를 먹고 <b>가죽으로 옷과 집을 만들었어요.</b>', 3.6);
     } else {
       Snd.play('stoneHit', .9);
-      toast(`💫 멧돼지 ${hit}마리를 ${STUN_SEC}초 동안 기절시켰어요!`);
-      Guide.cheer(`💫 ${it.ic} <b>${it.nm}</b>로 멧돼지를 기절시켰어요! <b>${STUN_SEC}초</b> 안에 도망치세요.`, 3.6);
+      toast(`💥 멧돼지를 때렸어요! 한 번 더 때리면 쓰러집니다`);
+      Guide.cheer(`💥 ${it.ic} <b>${it.nm}</b>로 때렸어요! <b>한 번 더</b> 때리면 잡을 수 있어요.`, 3.6);
     }
   } else Snd.throttle('stoneHit', 300, .35);
 }
@@ -5458,7 +5542,7 @@ function shoot(it, now){
   if(best >= 0){
     const b = Boars.list[best];
     bulletTracer(mv.x,mv.y,mv.z, b.x, .85, b.z);
-    Boars.kill(best);
+    Boars.damage(best, it.dmg || BOAR_HP);
     if(Net.on && !Net.host) Net.send({t:'fx', kill:[b.nid], stun:[]});
     Snd.play('boarHit', .8);
     toast('🔫 명중!');
@@ -5547,6 +5631,7 @@ function netRespawn(){
   spreadStart();
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
+  hpSet(PLAYER_HP); hurtT = 0;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
@@ -5603,6 +5688,7 @@ function startEra(){
   resetCounts(); S.mission={};
   if(S.eraIndex>0) S.c.food = (S.foodCarry!=null ? S.foodCarry : 4);   // 앞 시대에서 가져온 식량
   S.hunger = 100; S.starve = null; S.armed = false; hungerMul = 1; hungerWarn = 0; atkAt = -1e9;
+  hpSet(PLAYER_HP); hurtT = 0;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
   if(S.ak) S.ammo = AK_MAG;                       // 새 시대에서는 탄창을 채워 준다
@@ -6034,6 +6120,7 @@ function tick(){
   }
   updateReload(dt);
   updateHand(dt, t);
+  updateHp(dt);
   updateHunger(dt);
 
   const anims=animated.slice(); for(const f of anims) f(t,dt);
