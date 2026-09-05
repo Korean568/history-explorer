@@ -1085,7 +1085,7 @@ function floatItem(g, amp, spin){
 }
 /* 수집했을 때의 작은 효과 */
 function pickFx(x,y,z,col){
-  const g=new THREE.Group(); g.position.set(x,y,z); world.add(g);
+  const g=new THREE.Group(); g.position.set(x,y,z); g.userData.noHole=true; world.add(g);
   const bits=[];
   for(let i=0;i<8;i++){
     const b=new THREE.Mesh(new THREE.TetrahedronGeometry(.14,0),
@@ -1425,7 +1425,7 @@ const Boars = {
   max(){ return Math.min(3, 2 + (S.eraIndex||0)); },
 
   spawn(wild){
-    const g = boarModel(); world.add(g);
+    const g = boarModel(); g.userData.noHole = true; world.add(g);
     /* 멧돼지는 언제나 멀리서 나타난다.
        ① 플레이어에게서 멀고 ② 모닥불에서 멀고 ③ 마을(기지)에서 먼 자리를 고른다. */
     const bx=(S.base?S.base.x:0), bz=(S.base?S.base.z:44);
@@ -1854,6 +1854,11 @@ function akModel(){
   return g;
 }
 
+/* 총알이 그냥 지나가야 하는 것들(효과·탄피·멧돼지)에 표시를 단다 */
+function noHole(o){ o.traverse(function(c){ c.userData.noHole = true; }); return o; }
+/* 그 표시가 자기 자신이나 윗단에 붙어 있는가 */
+function isNoHole(o){ for(let n=o; n; n=n.parent) if(n.userData && n.userData.noHole) return true; return false; }
+
 /* ---------- 총알이 박힌 자국 ---------- */
 const shotRay = new THREE.Raycaster();
 const holeMat = new THREE.MeshBasicMaterial({color:0x241c14, transparent:true, opacity:.88, depthWrite:false});
@@ -1869,7 +1874,7 @@ function bulletImpact(from, dir, maxDist){
     const list = shotRay.intersectObject(world, true);
     for(const h of list){
       if(!h.face) continue;                       // 면이 없는 것(선 등)은 지나간다
-      if(h.object.userData.noHole) continue;      // 자국끼리 겹쳐 맞지 않게
+      if(isNoHole(h.object)) continue;            // 효과·탄피·멧돼지는 그냥 지나간다
       hit = h; break;
     }
   }catch(e){ return null; }
@@ -1917,7 +1922,7 @@ function ejectShell(p, right, up, fwd){
   body.rotation.z = Math.PI/2; g.add(body);
   const rim = new THREE.Mesh(new THREE.CylinderGeometry(.0066,.0066,.0035,6), M(0xa8871c));
   rim.rotation.z = Math.PI/2; rim.position.x = -.011; g.add(rim);
-  g.position.copy(p); world.add(g);
+  g.position.copy(p); noHole(g); world.add(g);
 
   const v = new THREE.Vector3()
     .addScaledVector(right, 1.5 + Math.random()*0.6)
@@ -1966,6 +1971,7 @@ function bulletTracer(x1,y1,z1,x2,y2,z2){
     new THREE.MeshBasicMaterial({color:0xfff0a8,transparent:true,opacity:.85}));
   m.position.set((x1+x2)/2,(y1+y2)/2,(z1+z2)/2);
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+  m.userData.noHole = true;                        // 총알이 제 궤적에 맞지 않게
   world.add(m);
   let life=0;
   const f=(t,dt)=>{ life+=dt; m.material.opacity=Math.max(0,.9-life*4.6);
@@ -5339,7 +5345,7 @@ function netApplyBoars(list){
     seen.add(e.n);
     let b = Boars.list.find(x=>x.nid===e.n);
     if(!b){
-      const g = boarModel(); world.add(g);
+      const g = boarModel(); g.userData.noHole = true; world.add(g);
       g.position.set(e.x,0,e.z); g.scale.setScalar(.35);
       b = { nid:e.n, g, x:e.x, z:e.z, tx:e.x, tz:e.z, dir:e.d, tdir:e.d,
             phase:Math.random()*TAU, state:e.s, stun:e.u||0, grow:.35,
