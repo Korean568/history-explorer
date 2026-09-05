@@ -995,8 +995,35 @@ const Snd = (function(){
   function hasFile(name){ return !!file[name]; }
   function dur(name){ return file[name] ? file[name].duration : 0; }
 
+  /* 소리가 갑자기 커지는 순간들(탁·철컥 같은 타격음)을 초 단위로 찾아 준다.
+     장전 동작을 소리에 맞추는 데 씁니다. 한 번 계산하면 기억해 둡니다. */
+  const hitCache = {};
+  function hits(name){
+    if(hitCache[name]) return hitCache[name];
+    const b = file[name]; if(!b) return null;
+    try{
+      const d = b.getChannelData(0), sr = b.sampleRate;
+      const win = Math.max(1, Math.floor(sr*0.010));      // 10ms 씩 크기를 잰다
+      const env = [];
+      for(let i=0; i+win<d.length; i+=win){
+        let acc=0; for(let j=0;j<win;j++){ const v=d[i+j]; acc+=v*v; }
+        env.push(Math.sqrt(acc/win));
+      }
+      let mx=0; for(const v of env) if(v>mx) mx=v;
+      const out=[]; let last=-99;
+      for(let i=2;i<env.length;i++){
+        const t = i*0.010;
+        if(env[i] > mx*0.22 && (env[i]-env[i-2]) > mx*0.13 && (t-last) > 0.07){
+          last = t; out.push(t);
+        }
+      }
+      hitCache[name] = out;
+      return out;
+    }catch(e){ return null; }
+  }
+
   return { init, resume, play, throttle, ambient, fadeOut, dragStart, dragLevel, dragStop, mute,
-           hasFile, dur, get ready(){ return on; } };
+           hasFile, dur, hits, get ready(){ return on; } };
 })();
 
 /* =========================================================
@@ -1626,6 +1653,24 @@ const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
 const AK_RELOAD = 2.2;         // 장전에 걸리는 시간(초) — 기본값
 let   reloadDur = 2.2;         // 이번 장전에 실제로 걸리는 시간
                                // (sounds/reload.mp3 가 있으면 그 길이에 맞춘다)
+/* 장전 동작의 네 순간 (0=시작, 1=끝).
+   reload.mp3 를 넣으면 그 소리의 타격음 위치에 맞춰 다시 계산합니다. */
+const RC_DEFAULT = { out:.150, inn:.455, pull:.705, rel:.815 };
+let   RC = Object.assign({}, RC_DEFAULT);
+
+/* 장전 소리에서 탄창·노리쇠 소리가 나는 지점을 찾아 동작 시각을 맞춘다 */
+function reloadCues(){
+  const h = Snd.hits('reload'), d = Snd.dur('reload');
+  if(!h || h.length < 2 || !d) return Object.assign({}, RC_DEFAULT);
+  const f = h.map(t => t/d);
+  const rel  = f[f.length-1];          // 마지막 타격음 = 노리쇠를 놓는 '철컥'
+  const pull = f[f.length-2];          // 그 앞 = 노리쇠를 당기는 소리
+  if(!(rel > pull) || pull < .30 || rel > .995) return Object.assign({}, RC_DEFAULT);
+  const inn = (f.length >= 3) ? f[f.length-3] : Math.max(.20, pull-.30);   // 새 탄창이 끼워지는 '탁'
+  const out = (f.length >= 4) ? f[0] : Math.max(.05, inn*.45);             // 빈 탄창을 뽑는 소리
+  if(!(out < inn && inn < pull)) return Object.assign({}, RC_DEFAULT);
+  return { out, inn, pull, rel };
+}
 /* 장전하는 동안 순서대로 나는 소리 (초, 소리이름) */
 const RELOAD_STEPS = [
   [0.00, 'magRelease'],        // 탄창 멈치를 누른다
@@ -1910,19 +1955,19 @@ function updateHand(dt, t){
       const RP = it.reload.pos, RR = it.reload.rot;
       qx += (RP[0]-qx)*w; qy += (RP[1]-qy)*w; qz += (RP[2]-qz)*w;
       ax += (RR[0]-ax)*w; ay += (RR[1]-ay)*w; az += (RR[2]-az)*w;
-      /* 탄창 : 앞으로 젖혀 뽑아 아래로 빼고, 새것이 올라와 끼워진다 */
+      /* 탄창 : '뽑는 소리' 에 맞춰 빠지고, '탁' 소리에 맞춰 새것이 끼워진다 */
       if(U.mag){
-        const inT  = ease(seg(.36,.455));               // 새 탄창이 자리를 잡는 정도
-        const a  = Math.max(0, ease(seg(.05,.17)) - inT);   // 젖힌 정도
-        const dy = Math.max(0, ease(seg(.15,.30)) - inT);   // 내려간 정도
+        const inT = ease(seg(RC.inn-.10, RC.inn));            // 새 탄창이 자리를 잡는다
+        const a   = Math.max(0, ease(seg(RC.out-.09, RC.out)) - inT);   // 앞으로 젖힌다
+        const dy  = Math.max(0, ease(seg(RC.out, RC.out+.14)) - inT);   // 아래로 빠진다
         U.mag.rotation.x = -a*.62;
         U.mag.position.y = -.030 - dy*.55 - a*.05;
         U.mag.position.z = -.030 - a*.05;
       }
-      /* 노리쇠 : 당겼다가 놓는다 */
+      /* 노리쇠 : '당기는 소리' 에 맞춰 뒤로 갔다가, '철컥' 에 맞춰 앞으로 돌아온다 */
       if(U.handle){
-        const pull = ease(seg(.63,.705)) - ease(seg(.705,.815));
-        U.handle.position.z = -.016 + pull*.090;
+        const back = ease(seg(RC.pull-.09, RC.pull)) - ease(seg(RC.rel-.05, RC.rel));
+        U.handle.position.z = -.016 + back*.090;
       }
     } else {
       if(U.mag){ U.mag.position.set(0,-.030,-.030); U.mag.rotation.x = 0; }
@@ -5201,10 +5246,12 @@ function reload(){
   if(Snd.hasFile('reload')){
     reloadDur = Math.max(1.0, Math.min(4.0, Snd.dur('reload')));
     reloadStep = RELOAD_STEPS.length;          // 단계별 소리는 건너뛴다
+    RC = reloadCues();                         // 동작을 그 소리에 맞춘다
     Snd.play('reload', 1.0);
   } else {
     reloadDur = AK_RELOAD;
     reloadStep = 0;
+    RC = Object.assign({}, RC_DEFAULT);
   }
   reloadT = reloadDur;
   toast('🔄 장전하는 중…');
