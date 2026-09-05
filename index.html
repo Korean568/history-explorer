@@ -3124,6 +3124,7 @@ function resetCounts(){ S.c = {food:0,stick:0,hide:0,tool:0,polish:0,wood:0,seed
 /* 5초에 1% 씩 줄어든다 (100% → 0% 이 500초). 달릴 때는 2배로 빨라진다. */
 const HUNGER_SEC = 500;
 const HUNGER_RUN = 2;
+const STARVE_SEC = 20;           // 배고픔이 0 이 된 뒤 버틸 수 있는 시간(초)
 let hungerMul = 1;               // 배가 고프면 느려진다
 let hungerWarn = 0;
 function hungerOn(){ return S.eraIndex >= 1; }
@@ -3166,12 +3167,18 @@ function updateHunger(dt){
     hungerWarn -= dt;
     if(S.hunger<=0){
       hungerMul = 0.6;
-      if(hungerWarn<=0){ hungerWarn = 10;
+      /* 아무것도 먹지 않으면 버티다가 쓰러진다 */
+      S.starve = (S.starve==null ? STARVE_SEC : S.starve) - dt;
+      if(S.starve <= 0){ S.starve = 0; gameOver('hunger'); return; }
+      if(hungerWarn<=0){ hungerWarn = 4;
+        const left = Math.ceil(S.starve);
         Guide.say((S.c.food||0)>0
-          ? `🍖 <b>배가 너무 고파요!</b> <b>${eatKeyTxt()}</b> 로 식량을 먹으세요. (식량 ${S.c.food}개)`
-          : '🍖 <b>배가 너무 고파요!</b> 🍓 열매나 🐟 물고기를 찾아 식량을 구하세요.', 5); }
+          ? `🍖 <b>쓰러지기까지 ${left}초!</b> <b>${eatKeyTxt()}</b> 로 얼른 식량을 먹으세요. (식량 ${S.c.food}개)`
+          : `🍖 <b>쓰러지기까지 ${left}초!</b> 🍓 열매나 🐟 물고기를 찾으세요!`, 4);
+        Snd.throttle('boarGrowl', 3000, .45); }
     } else {
       hungerMul = 1;
+      S.starve = null;
       if(S.hunger<=35 && hungerWarn<=0){ hungerWarn = 18;
         Guide.say((S.c.food||0)>0
           ? `🍖 배가 고파지고 있어요. <b>${eatKeyTxt()}</b> 로 식량을 먹을 수 있어요.`
@@ -3180,7 +3187,9 @@ function updateHunger(dt){
   }
   const h = Math.round(S.hunger==null?100:S.hunger);
   elHungerBar.style.width = h+'%';
-  elHungerTxt.textContent = h+'%';
+  elHungerTxt.textContent = (S.starve!=null && S.starve>0)
+    ? Math.ceil(S.starve)+'초'      // 쓰러지기까지 남은 시간
+    : h+'%';
   elHunger.classList.toggle('low', h<=35);
   elHunger.classList.toggle('empty', h<=0);
 }
@@ -5469,10 +5478,12 @@ function shoot(it, now){
 }
 
 /* 멧돼지에게 잡혔을 때 : 그 시대를 처음부터 다시 시작한다 */
-function gameOver(){
+function gameOver(cause){
   if(dead) return;
   dead = true;
-  Snd.play('boarHit'); Snd.fadeOut(0.9);
+  const starved = (cause === 'hunger');
+  const title = starved ? '🍖 배고파서 쓰러졌어요!' : '🐗 멧돼지에게 잡혔어요!';
+  Snd.play(starved ? 'claySoft' : 'boarHit'); Snd.fadeOut(0.9);
   camShake = 2.0;
   paused = true; exitLock(); hideCenter();
   elAct.style.display='none'; elDanger.style.display='none';
@@ -5482,7 +5493,7 @@ function gameOver(){
   if(Net.on){
     Net.send({t:'died'});
     let n = 3;
-    const show = ()=> centerMsg('<h2>🐗 멧돼지에게 잡혔어요!</h2>'+
+    const show = ()=> centerMsg(`<h2>${title}</h2>`+
       `<p>친구들의 탐험은 계속되고 있어요.</p><p><b>${n}초</b> 뒤 마을에서 다시 시작합니다…</p>`);
     show();
     const iv = setInterval(()=>{ n--; if(n>0) show(); }, 1000);
@@ -5492,15 +5503,24 @@ function gameOver(){
 
   const era = ERAS[S.eraIndex];
   setTimeout(()=>{
-    openVeil(`
-      <h2>🐗 멧돼지에게 잡혔어요!</h2>
+    const body = starved ? `
+      <p>먹을거리를 구하는 일은 선사시대 사람들에게<br>
+         <b>하루하루의 생존</b>이었어요.</p>
+      <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
+        <p style="margin:0;font-size:14px;line-height:1.7">
+          💡 <b>${eatKeyTxt()}</b>를 눌러 모아 둔 식량을 먹을 수 있어요.<br>
+          🍓 <b>열매</b>와 🐟 <b>물고기</b>를 미리 넉넉히 모아 두세요.<br>
+          🏃 달리면 배가 <b>두 배로</b> 빨리 고파집니다.</p>
+      </div>` : `
       <p>선사시대의 밤은 사람에게 아주 위험했어요.<br>
          그래서 사람들은 <b>불을 피우고</b> 무리를 지어 몸을 지켰답니다.</p>
       <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
         <p style="margin:0;font-size:14px;line-height:1.7">
           💡 <b>돌도끼로 나무를 5그루</b> 베어 두면 밤에 모닥불이 타올라 멧돼지가 다가오지 못해요.<br>
           🏃 급할 때는 <b>Shift</b>(태블릿은 🏃 버튼)를 누른 채 <b>달려서</b> 도망치세요!</p>
-      </div>
+      </div>`;
+    openVeil(`
+      <h2>${title}</h2>${body}
       <button class="big" id="ok">🔄 ${era.icon} ${era.name} 다시하기</button>`);
     $('#ok').onclick = ()=>{
       elHurt.style.opacity='0';
@@ -5526,7 +5546,7 @@ function netRespawn(){
   player.x = era.start.x; player.z = era.start.z; yaw = 0; pitch = -.05;
   spreadStart();
   camShake = 0; speedMul = 1; dragMode = null; running = false;
-  S.hunger = Math.max(S.hunger==null?100:S.hunger, 60);
+  S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
@@ -5582,7 +5602,7 @@ function startEra(){
   seed = 20260820 + S.eraIndex*7777;
   resetCounts(); S.mission={};
   if(S.eraIndex>0) S.c.food = (S.foodCarry!=null ? S.foodCarry : 4);   // 앞 시대에서 가져온 식량
-  S.hunger = 100; S.armed = false; hungerMul = 1; hungerWarn = 0; atkAt = -1e9;
+  S.hunger = 100; S.starve = null; S.armed = false; hungerMul = 1; hungerWarn = 0; atkAt = -1e9;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
   if(S.ak) S.ammo = AK_MAG;                       // 새 시대에서는 탄창을 채워 준다
