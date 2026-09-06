@@ -3367,12 +3367,10 @@ function bossMusic(on){
   }catch(e){}
 }
 
-/* 동굴 안에서는 통로와 보스방 밖으로 나갈 수 없다.
-   바위 사이 틈으로 빠져나가면 아무것도 없는 캄캄한 곳에 서게 되기 때문입니다. */
-function caveClamp(){
-  if(Math.abs(player.x) <= 8.2 && player.z >= -14 && player.z <= 50) return;   // 통로 안
-  const dx = player.x, dz = player.z + 40, d = Math.hypot(dx, dz) || 1;
-  if(d > 27){ player.x = dx/d*27; player.z = -40 + dz/d*27; }                  // 보스방 안으로
+/* 동굴에서 다닐 수 있는 자리인가 (통로 또는 보스방 안) */
+function caveInside(x, z){
+  if(Math.abs(x) <= 8.2 && z >= -14 && z <= 50) return true;   // 통로
+  return Math.hypot(x, z + 40) <= 27;                          // 보스방
 }
 
 /* ---------- 들어가고 나오기 ---------- */
@@ -6712,9 +6710,16 @@ function tick(){
         const dx=nx-o.x, dz=nz-o.z, d=Math.hypot(dx,dz), r=o.r+.7;
         if(d<r && d>0.001){ nx=o.x+dx/d*r; nz=o.z+dz/d*r; }
       }
-      player.x=Math.max(-BOUND,Math.min(BOUND,nx));
-      player.z=Math.max(-BOUND,Math.min(BOUND,nz));
-      if(CAVE.on) caveClamp();
+      nx = Math.max(-BOUND, Math.min(BOUND, nx));
+      nz = Math.max(-BOUND, Math.min(BOUND, nz));
+      /* 동굴에서는 바위 틈으로 빠져나가지 못하게 막는다.
+         옮겨 놓지 않고 그냥 못 가게만 하고, 벽을 따라 미끄러지게 한다. */
+      if(CAVE.on && caveInside(player.x, player.z) && !caveInside(nx, nz)){
+        if(caveInside(nx, player.z)) nz = player.z;            // 옆으로만 움직인다
+        else if(caveInside(player.x, nz)) nx = player.x;       // 앞뒤로만 움직인다
+        else { nx = player.x; nz = player.z; }                 // 아예 못 움직인다
+      }
+      player.x = nx; player.z = nz;
     }
   }
 
