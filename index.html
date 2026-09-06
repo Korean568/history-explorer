@@ -3236,20 +3236,76 @@ function sansModel(){
 
 function caveDoor(x,z){
   const g = new THREE.Group();
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(7.4,7.2,.9), M(0x6d6259));
-  frame.position.y = 3.6; g.add(frame);
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(6.2,6.2,.6), M(0x3d3630));
-  slab.position.set(0,3.4,-.3); g.add(slab);
-  for(let i=0;i<3;i++){
-    const b = new THREE.Mesh(new THREE.BoxGeometry(6.4,.30,.22), M(0x8a7d6d));
-    b.position.set(0,1.9+i*1.6,-.62); g.add(b);
+  const WOOD1 = 0x6b4a2a, WOOD2 = 0x7d5833, WOOD3 = 0x5a3d22, IRON = 0x3a3a3e;
+  /* 바위를 파내고 끼워 넣은 나무문 */
+  const jambL = new THREE.Mesh(new THREE.BoxGeometry(.55,7.4,1.0), M(WOOD3));
+  jambL.position.set(-3.3,3.7,0); g.add(jambL);
+  const jambR = jambL.clone(); jambR.position.x = 3.3; g.add(jambR);
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(7.4,.65,1.0), M(WOOD3));
+  lintel.position.set(0,7.2,0); g.add(lintel);
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(7.4,.30,1.0), M(WOOD3));
+  sill.position.set(0,.15,0); g.add(sill);
+
+  /* ── 문짝 : 왼쪽 돌쩌귀를 축으로 열린다 ── */
+  const leaf = new THREE.Group();
+  leaf.position.set(-3.05, 0, 0);            // 돌쩌귀 자리
+  const P = 3.05;                            // 문짝 안에서의 가운데 보정
+  /* 세로 널판 일곱 장 */
+  for(let i=0;i<7;i++){
+    const w = 0.84;
+    const pl = new THREE.Mesh(new THREE.BoxGeometry(w-.05,6.9,.42),
+      M(i%2 ? WOOD1 : WOOD2));
+    pl.position.set(P-2.52 + i*w, 3.55, -.22); leaf.add(pl);
   }
-  const eye = new THREE.Mesh(new THREE.RingGeometry(.7,1.0,16),
-    new THREE.MeshBasicMaterial({color:0x6fe0ff, transparent:true, opacity:.8, side:THREE.DoubleSide}));
-  eye.position.set(0,3.6,-.66); g.add(eye);
+  /* 쇠 띠 두 줄 + 못 */
+  [2.1, 5.1].forEach(y=>{
+    const band = new THREE.Mesh(new THREE.BoxGeometry(6.1,.34,.14), M(IRON));
+    band.position.set(P,y,-.46); leaf.add(band);
+    for(let i=0;i<6;i++){
+      const nail = new THREE.Mesh(new THREE.BoxGeometry(.14,.14,.10), M(0x55555c));
+      nail.position.set(P-2.5+i, y, -.54); leaf.add(nail);
+    }
+  });
+  /* 비스듬한 버팀목 */
+  const brace = new THREE.Mesh(new THREE.BoxGeometry(6.6,.30,.12), M(WOOD3));
+  brace.position.set(P,3.6,-.46); brace.rotation.z = .78; leaf.add(brace);
+  const brace2 = brace.clone(); brace2.rotation.z = -.78; leaf.add(brace2);
+  /* 쇠고리 손잡이 */
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(.5,.5,.10), M(IRON));
+  plate.position.set(P+1.9,3.5,-.48); leaf.add(plate);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(.32,.07,6,14), M(0x6a6a72));
+  ring.position.set(P+1.9,3.1,-.55); leaf.add(ring);
+  g.add(leaf);
+  g.userData.leaf = leaf;
+
+  /* 어두운 굴에서도 보이도록 문틈에서 새어 나오는 빛 */
+  const eye = new THREE.Mesh(new THREE.PlaneGeometry(6.2,.10),
+    new THREE.MeshBasicMaterial({color:0x9fe6ff, transparent:true, opacity:.55}));
+  eye.position.set(0,.30,-.50); g.add(eye);
+  const lamp = new THREE.PointLight(0x9fd8ff, .9, 14, 2);
+  lamp.position.set(0,3.4,-1.4); g.add(lamp);
+  animated.push((t)=>{ lamp.intensity = .7 + Math.sin(t*1.8)*.25; });
+
+  /* 문 둘레를 바위벽으로 막는다 (양옆·위로 틈이 벌어져 뒤가 비치지 않게) */
+  const ROCK = 0x6a6058;
+  [-1,1].forEach(sx=>{
+    const side = new THREE.Mesh(new THREE.BoxGeometry(11,20,2.2), M(ROCK));
+    side.position.set(sx*9.2, 8, 0); g.add(side);
+    colliders.push({x:x+sx*9.2, z, r:5.2});
+  });
+  const top = new THREE.Mesh(new THREE.BoxGeometry(30,14,2.2), M(ROCK));
+  top.position.set(0, 14, 0); g.add(top);
+  /* 문 앞뒤로도 조금 덮어 준다 */
+  [-1,1].forEach(sz=>{
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(30,3,4), M(ROCK));
+    cap.position.set(0, 8.6, sz*2.4); g.add(cap);
+  });
+
   g.position.set(x,0,z); world.add(g);
-  colliders.push({x, z, r:3.4});
-  animated.push((t)=>{ eye.scale.setScalar(1+Math.sin(t*2.2)*.12); });
+  const col = {x, z, r:3.4};
+  colliders.push(col);
+  g.userData.col = col;
+  CAVE.doorG = g;
   return g;
 }
 
@@ -3385,14 +3441,32 @@ function caveOpenDoor(){
   CAVE.phase = 'fight';
   Snd.play('thud', 1.0); camShake = 1.4;
 
+  /* 문을 활짝 연다 — 막고 있던 자리도 함께 치운다 */
+  const dg = CAVE.doorG;
+  if(dg){
+    const i = colliders.indexOf(dg.userData.col);
+    if(i >= 0) colliders.splice(i, 1);
+    const leaf = dg.userData.leaf;
+    if(leaf){
+      let a = 0;
+      const swing = (t, dt)=>{
+        a = Math.min(1, a + dt*1.1);
+        leaf.rotation.y = -a*1.95;                  // 안쪽으로 열린다
+        if(a >= 1) removeAnim(swing);
+      };
+      animated.push(swing);
+      Snd.play('stoneMove', .9);
+    }
+  }
+
   /* 뼈다귀 아저씨 */
   const sg = sansModel(); sg.position.set(0,0,-58); world.add(sg);
   const sans = { kind:'sans', g:sg, x:0, z:-58, hp:3000, max:3000, r:1.5,
                  alive:true, vuln:false, blink:2.5 };
   bosses.push(sans);
 
-  /* 매머드 두 마리 */
-  [[-10,-44],[10,-48]].forEach(q=>{
+  /* 매머드 */
+  [[0,-46]].forEach(q=>{
     const mg = mammothModel(); mg.position.set(q[0],0,q[1]); world.add(mg);
     bosses.push({ kind:'mammoth', g:mg, x:q[0], z:q[1], hp:15000, max:15000, r:3.6,
                   alive:true, vuln:true, hitCd:0 });
@@ -3405,7 +3479,7 @@ function caveOpenDoor(){
   }
   bossMusic(true);
   centerMsg('<h2>💀 ？？？</h2><p>"어이. 여기서부턴 못 지나가."</p>'+
-            '<p style="opacity:.85">매머드 두 마리와 멧돼지 스무 마리가 나타났다!</p>', 4200);
+            '<p style="opacity:.85">매머드 한 마리와 멧돼지 스무 마리가 나타났다!</p>', 4200);
   toast('💀 싸움이 시작되었어요!');
 }
 
@@ -3488,7 +3562,7 @@ function caveUpdate(dt){
     } else if(mams.length){
       const hp = mams.reduce((a,b)=>a+Math.max(0,b.hp), 0);
       const mx = mams.reduce((a,b)=>a+b.max, 0);
-      elBossName.textContent = '🐘 매머드 ' + live.length + '마리';
+      elBossName.textContent = '🐘 매머드';
       elBossFill.style.width = (hp/mx*100) + '%';
       elBossSub.textContent = Math.round(hp).toLocaleString() + ' / ' + mx.toLocaleString() +
         '   ·   🐗 멧돼지 ' + left + '마리 남음';
