@@ -729,6 +729,12 @@ const SOUNDS = {
   shell:         { url:null, vol:0.22 },   // 탄피가 바닥에 떨어진다
   rpgShot:       { url:'sounds/rpgShot.mp3', vol:0.55 },   // RPG 발사
   rpgBoom:       { url:'sounds/rpgBoom.mp3', vol:0.60 },   // RPG 폭발
+  rpgReload:     { url:'sounds/rpgReload.mp3', vol:0.55 }, // RPG 장전 전체
+  /* 아래는 rpgReload.mp3 가 없을 때 순서대로 나는 내장 소리입니다 */
+  rpgGrab:       { url:null, vol:0.40 },   // 로켓을 집는다
+  rpgSlide:      { url:null, vol:0.45 },   // 발사관에 밀어 넣는다
+  rpgSeat:       { url:null, vol:0.55 },   // 끝까지 들어가 물린다
+  rpgReady:      { url:null, vol:0.40 },   // 준비 완료
   /* 아래는 reload.mp3 가 없을 때 순서대로 나는 내장 소리입니다 */
   gunCock:       { url:null, vol:0.40 },
   gunTail:       { url:null, vol:0.30 },
@@ -916,6 +922,17 @@ const Snd = (function(){
                    burst({type:'lowpass',freq:520,sweep:90,vol:.60*v,dur:.55,atk:.002});
                    burst({type:'highpass',freq:3200,vol:.30*v,dur:.10,atk:.001});
                    burst({type:'bandpass',freq:700,q:.4,sweep:180,vol:.22*v,dur:1.5,atk:.08,delay:.06}); },
+    /* ---- RPG 장전 ---- */
+    rpgReload:(v)=>{},
+    rpgGrab:(v)=>{ burst({type:'lowpass',freq:900,vol:.20*v,dur:.16,atk:.006});
+                   burst({type:'bandpass',freq:2600,q:2,vol:.10*v,dur:.07,delay:.07}); },
+    rpgSlide:(v)=>{ burst({type:'bandpass',freq:1700,q:1.3,sweep:760,vol:.26*v,dur:.34,atk:.012});
+                    tone({type:'triangle',freq:300,to:170,dur:.22,vol:.07*v,atk:.02}); },
+    rpgSeat:(v)=>{ tone({type:'triangle',freq:170,to:70,dur:.20,vol:.30*v,atk:.001});
+                   burst({type:'lowpass',freq:600,vol:.26*v,dur:.15,atk:.002});
+                   burst({type:'bandpass',freq:2000,q:3,vol:.18*v,dur:.07,atk:.001}); },
+    rpgReady:(v)=>{ burst({type:'bandpass',freq:4200,q:8,vol:.20*v,dur:.03});
+                    tone({type:'square',freq:760,to:520,dur:.03,vol:.05*v}); },
     shell:(v)=>{ burst({type:'bandpass',freq:6400,q:12,vol:.13*v,dur:.05,atk:.0006});
                  burst({type:'bandpass',freq:4300,q:9,vol:.08*v,dur:.06,delay:.05});
                  tone({type:'triangle',freq:2500,to:1700,dur:.05,vol:.035*v,delay:.02}); },
@@ -1747,8 +1764,8 @@ const RC_DEFAULT = { out:.150, inn:.455, pull:.705, rel:.815 };
 let   RC = Object.assign({}, RC_DEFAULT);
 
 /* 장전 소리에서 탄창·노리쇠 소리가 나는 지점을 찾아 동작 시각을 맞춘다 */
-function reloadCues(){
-  const h = Snd.hits('reload'), d = Snd.dur('reload');
+function reloadCues(name){
+  const h = Snd.hits(name||'reload'), d = Snd.dur(name||'reload');
   if(!h || h.length < 2 || !d) return Object.assign({}, RC_DEFAULT);
   const f = h.map(t => t/d);
   const rel  = f[f.length-1];          // 마지막 타격음 = 노리쇠를 놓는 '철컥'
@@ -1759,15 +1776,22 @@ function reloadCues(){
   if(!(out < inn && inn < pull)) return Object.assign({}, RC_DEFAULT);
   return { out, inn, pull, rel };
 }
-/* 장전하는 동안 순서대로 나는 소리 (초, 소리이름) */
-const RELOAD_STEPS = [
-  [0.00, 'magRelease'],        // 탄창 멈치를 누른다
-  [0.28, 'magOut'],            // 빈 탄창을 뽑는다
-  [1.00, 'magIn'],             // 새 탄창을 끼운다
-  [1.55, 'boltPull'],          // 노리쇠를 당긴다
-  [1.80, 'boltRelease']        // 놓으면 철컹
+/* 장전하는 동안 순서대로 나는 소리 (전체 시간에 대한 비율, 소리이름) */
+const RELOAD_FRAC = [
+  [0.000, 'magRelease'],       // 탄창 멈치를 누른다
+  [0.127, 'magOut'],           // 빈 탄창을 뽑는다
+  [0.455, 'magIn'],            // 새 탄창을 끼운다
+  [0.705, 'boltPull'],         // 노리쇠를 당긴다
+  [0.818, 'boltRelease']       // 놓으면 철컹
+];
+const RPG_FRAC = [
+  [0.000, 'rpgGrab'],          // 로켓을 집는다
+  [0.300, 'rpgSlide'],         // 발사관에 밀어 넣는다
+  [0.620, 'rpgSeat'],          // 끝까지 들어가 물린다
+  [0.820, 'rpgReady']          // 준비 완료
 ];
 let reloadStep = 0;
+let reloadSteps = [];          // 이번 장전에 실제로 쓸 순서 (초, 이름)
 let reloadT = 0;               // 남은 장전 시간
 let emptyAt = -1e9;            // 빈 탄창 안내를 마지막으로 띄운 때
 let autoFire = true;           // 평소에는 연발, V 키로 단발과 번갈아 쓴다
@@ -2111,21 +2135,29 @@ const ITEMS = [
   /* 동굴 끝에서 얻는 무기 */
   { id:'rpg', key:'5', ic:'🚀', nm:'RPG', range:60, dmg:1972, kill:true, gun:true, cd:1500,
     mag:1, reloadSec:3.2, shotSnd:'rpgShot',
+    reloadSnd:'rpgReload', reloadFrac:RPG_FRAC, reloadKind:'rpg',
     have:()=> !!S.rpg,
     pos:[.175,-.220,-.560], rot:[.03,-.05,.02],
     aim:[0,-.070,-.640],
-    reload:{ pos:[.050,-.150,-.660], rot:[.12,.40,-1.28] },
-    reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.08,-.88,.14], roll:.75 },
+    /* 장전 자세 : 발사관 앞쪽이 보이도록 몸쪽으로 눕힌다 */
+    reload:{ pos:[.070,-.185,-.640], rot:[.10,.66,.30] },
+    reloadBolt:{ pos:[.070,-.185,-.640], rot:[.10,.66,.30] },
     make(){
       const g = new THREE.Group();
       const tube = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,1.15,10), M(0x3f4a3a));
       tube.rotation.x = Math.PI/2; tube.position.z = -.10; g.add(tube);
       const flare = new THREE.Mesh(new THREE.CylinderGeometry(.13,.075,.24,10), M(0x333c30));
       flare.rotation.x = Math.PI/2; flare.position.z = .52; g.add(flare);
+      /* 로켓(탄두 + 목) — 쏘면 사라지고, 장전하면 앞에서 밀려 들어온다 */
+      const rocket = new THREE.Group();
       const head = new THREE.Mesh(new THREE.ConeGeometry(.115,.34,10), M(0x7a2f26));
-      head.rotation.x = -Math.PI/2; head.position.z = -.82; g.add(head);
+      head.rotation.x = -Math.PI/2; head.position.z = -.18; rocket.add(head);
       const neck = new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.22,8), M(0x5a5347));
-      neck.rotation.x = Math.PI/2; neck.position.z = -.64; g.add(neck);
+      neck.rotation.x = Math.PI/2; rocket.add(neck);
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(.16,.02,.10), M(0x4a443a));
+      fin.position.z = .10; rocket.add(fin);
+      rocket.position.z = -.64; g.add(rocket);
+      g.userData.rocket = rocket;
       const grip = new THREE.Mesh(new THREE.BoxGeometry(.05,.20,.09), M(0x2c2c2c));
       grip.position.set(0,-.16,.10); grip.rotation.x = -.16; g.add(grip);
       const grip2 = new THREE.Mesh(new THREE.BoxGeometry(.05,.15,.08), M(0x2c2c2c));
@@ -2165,8 +2197,34 @@ function updateHand(dt, t){
     const A = it.aim, k = aimK;
     const px = P[0]+(A[0]-P[0])*k, py = P[1]+(A[1]-P[1])*k, pz = P[2]+(A[2]-P[2])*k;
     const rx = R[0]+(0-R[0])*k,    ry = R[1]+(0-R[1])*k,    rz = R[2]+(0-R[2])*k;
-    /* 장전 : 총을 몸쪽으로 눕히고 탄창을 갈아 끼운 뒤 노리쇠를 당긴다 */
     const U = it.view.userData;
+    /* ---- RPG : 로켓을 앞에서 밀어 넣는다 ---- */
+    if(it.reloadKind === 'rpg'){
+      let rx2=px, ry2=py, rz2=pz, ax2=rx, ay2=ry, az2=rz;
+      if(reloadT > 0){
+        const q = 1 - reloadT/reloadDur;
+        const seg = (a,b)=> Math.max(0, Math.min(1, (q-a)/(b-a)));
+        const ease = (x)=> x*x*(3-2*x);
+        const w = ease(seg(0,.14)) - ease(seg(.82,1));
+        const RP = it.reload.pos, RR = it.reload.rot;
+        rx2 += (RP[0]-rx2)*w; ry2 += (RP[1]-ry2)*w; rz2 += (RP[2]-rz2)*w;
+        ax2 += (RR[0]-ax2)*w; ay2 += (RR[1]-ay2)*w; az2 += (RR[2]-az2)*w;
+        if(U.rocket){
+          const inT = ease(seg(.30,.62));            // 밀려 들어가는 정도
+          U.rocket.visible = q > .26;
+          U.rocket.position.z = -.64 - (1-inT)*.62;
+          U.rocket.rotation.z = (1-inT)*.35;
+        }
+      } else if(U.rocket){
+        U.rocket.visible = ammoOf(it) > 0;           // 쏘고 나면 탄두가 없다
+        U.rocket.position.z = -.64; U.rocket.rotation.z = 0;
+      }
+      it.view.position.set(rx2+e*.030*(1-k*.6), ry2+bob-e*.010, rz2+e*.115);
+      it.view.rotation.set(ax2+e*.30, ay2, az2+bob*.5);
+      return;
+    }
+
+    /* 장전 : 총을 몸쪽으로 눕히고 탄창을 갈아 끼운 뒤 노리쇠를 당긴다 */
     let qx=px, qy=py, qz=pz, ax=rx, ay=ry, az=rz, rollZ=0;
     if(reloadT>0){
       const q = 1 - reloadT/reloadDur;                       // 0 → 1
@@ -5905,14 +5963,18 @@ function reload(){
   if(paused || dead || !g) return;
   if(reloadT>0) return;
   if(ammoOf(g) >= magSize(g)){ toast('🔫 탄창이 이미 가득 찼어요'); return; }
-  /* sounds/reload.mp3 를 넣어 두면 그 소리 하나로 장전 전체를 대신한다 */
-  if(Snd.hasFile('reload')){
-    reloadDur = Math.max(1.0, Math.min(4.0, Snd.dur('reload')));
-    reloadStep = RELOAD_STEPS.length;          // 단계별 소리는 건너뛴다
-    RC = reloadCues();                         // 동작을 그 소리에 맞춘다
-    Snd.play('reload', 1.0);
+  /* 통짜 소리 파일이 있으면 그것 하나로 장전 전체를 대신한다 */
+  const snd  = g.reloadSnd || 'reload';
+  const frac = g.reloadFrac || RELOAD_FRAC;
+  if(Snd.hasFile(snd)){
+    reloadDur = Math.max(1.0, Math.min(5.0, Snd.dur(snd)));
+    reloadSteps = [];
+    reloadStep = 0;                            // 단계별 소리는 건너뛴다
+    RC = reloadCues(snd);                      // 동작을 그 소리에 맞춘다
+    Snd.play(snd, 1.0);
   } else {
     reloadDur = g.reloadSec || AK_RELOAD;
+    reloadSteps = frac.map(q => [q[0]*reloadDur, q[1]]);
     reloadStep = 0;
     RC = Object.assign({}, RC_DEFAULT);
   }
@@ -5926,8 +5988,8 @@ function updateReload(dt){
   reloadT = Math.max(0, reloadT - dt);
   /* 지나온 시각의 소리를 순서대로 낸다 */
   const done = reloadDur - reloadT;
-  while(reloadStep < RELOAD_STEPS.length && done >= RELOAD_STEPS[reloadStep][0]){
-    Snd.play(RELOAD_STEPS[reloadStep][1], 1.0);
+  while(reloadStep < reloadSteps.length && done >= reloadSteps[reloadStep][0]){
+    Snd.play(reloadSteps[reloadStep][1], 1.0);
     reloadStep++;
   }
   if(reloadT===0){
