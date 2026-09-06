@@ -727,6 +727,8 @@ const SOUNDS = {
   /* 아래는 전부 내장 합성음입니다 */
   gunDry:        { url:null, vol:0.35 },   // 빈 탄창 : 찰칵
   shell:         { url:null, vol:0.22 },   // 탄피가 바닥에 떨어진다
+  rpgShot:       { url:'sounds/rpgShot.mp3', vol:0.55 },   // RPG 발사
+  rpgBoom:       { url:'sounds/rpgBoom.mp3', vol:0.60 },   // RPG 폭발
   /* 아래는 reload.mp3 가 없을 때 순서대로 나는 내장 소리입니다 */
   gunCock:       { url:null, vol:0.40 },
   gunTail:       { url:null, vol:0.30 },
@@ -904,6 +906,16 @@ const Snd = (function(){
                  burst({type:'bandpass',freq:3600,q:6,vol:.10*v,dur:.04,delay:.045}); },
     boltPull:(v)=>{ burst({type:'bandpass',freq:2800,q:2.0,sweep:1400,vol:.24*v,dur:.14,atk:.006});
                     burst({type:'highpass',freq:5200,vol:.08*v,dur:.10,atk:.01}); },
+    /* RPG : 총처럼 딱 터지지 않고, 퍽 하고 나가서 쉭 하고 날아간다 */
+    rpgShot:(v)=>{ burst({type:'lowpass',freq:700,sweep:200,vol:.55*v,dur:.22,atk:.004});
+                   tone({type:'sine',freq:110,to:44,dur:.26,vol:.30*v,atk:.003});
+                   burst({type:'bandpass',freq:2400,q:.8,sweep:5200,vol:.26*v,dur:.55,atk:.02});
+                   burst({type:'highpass',freq:5200,vol:.10*v,dur:.45,atk:.06,delay:.05}); },
+    /* 폭발 : 깊은 쿵 + 길게 남는 울림 */
+    rpgBoom:(v)=>{ tone({type:'sine',freq:88,to:26,dur:.75,vol:.55*v,atk:.002});
+                   burst({type:'lowpass',freq:520,sweep:90,vol:.60*v,dur:.55,atk:.002});
+                   burst({type:'highpass',freq:3200,vol:.30*v,dur:.10,atk:.001});
+                   burst({type:'bandpass',freq:700,q:.4,sweep:180,vol:.22*v,dur:1.5,atk:.08,delay:.06}); },
     shell:(v)=>{ burst({type:'bandpass',freq:6400,q:12,vol:.13*v,dur:.05,atk:.0006});
                  burst({type:'bandpass',freq:4300,q:9,vol:.08*v,dur:.06,delay:.05});
                  tone({type:'triangle',freq:2500,to:1700,dur:.05,vol:.035*v,delay:.02}); },
@@ -1718,7 +1730,14 @@ const Buddy = (function(){
 let equipId = null;            // 지금 들고 있는 도구 id (없으면 null)
 let swingT = 0;                // 휘두르는 중
 /* ---- AK-47 : 탄창과 조준 ---- */
-const AK_MAG    = 30;          // 탄창 한 개에 들어가는 총알 수
+const AK_MAG    = 30;          // 기본 탄창 크기 (총마다 mag 값으로 바꿀 수 있다)
+/* 총마다 남은 탄약을 따로 기억한다 : S.mag = { ak:30, rpg:4 } */
+const magSize = (it)=> it.mag || AK_MAG;
+const ammoOf  = (it)=> (S.mag && S.mag[it.id] != null) ? S.mag[it.id] : magSize(it);
+const setAmmo = (it, v)=>{ if(!S.mag) S.mag = {};
+  S.mag[it.id] = Math.max(0, Math.min(magSize(it), v)); };
+/* 지금 들고 있는 것이 총이면 그 총, 아니면 null */
+const heldGun = ()=>{ const it = equippedItem(); return (it && it.gun) ? it : null; };
 const AK_RELOAD = 2.2;         // 장전에 걸리는 시간(초) — 기본값
 let   reloadDur = 2.2;         // 이번 장전에 실제로 걸리는 시간
                                // (sounds/reload.mp3 가 있으면 그 길이에 맞춘다)
@@ -1946,7 +1965,7 @@ function bulletImpact(from, dir, maxDist){
 
 /* RPG 가 터진다 : 둘레의 적을 한꺼번에 날린다 */
 function rpgBlast(x, y, z){
-  Snd.play('thud', 1.0); Snd.play('gunShot', .9);
+  Snd.play('rpgBoom', 1.0);
   camShake = Math.max(camShake, 1.5);
   /* 퍼지는 불빛 */
   const ball = new THREE.Mesh(new THREE.SphereGeometry(1,10,8),
@@ -2091,6 +2110,7 @@ const ITEMS = [
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } },
   /* 동굴 끝에서 얻는 무기 */
   { id:'rpg', key:'5', ic:'🚀', nm:'RPG', range:60, dmg:1972, kill:true, gun:true, cd:1500,
+    mag:1, reloadSec:3.2, shotSnd:'rpgShot',
     have:()=> !!S.rpg,
     pos:[.175,-.220,-.560], rot:[.03,-.05,.02],
     aim:[0,-.070,-.640],
@@ -2241,7 +2261,7 @@ function equip(id){
   const ab = document.getElementById('atkBtn');
   if(ab) ab.style.display = (equipId && usingTouch) ? 'flex' : 'none';
   aiming = false; firing = false; reloadT = 0;
-  if(!off && it.gun && S.ammo==null) S.ammo = AK_MAG;
+  if(!off && it.gun && (!S.mag || S.mag[it.id]==null)) setAmmo(it, magSize(it));
   drawAmmo();
   Snd.play(off ? 'claySoft' : (id==='sword'?'metalStir':'stoneGet'), .9);
   toast(off ? `${it.ic} ${josa(it.nm,'을','를')} 내렸어요`
@@ -3048,7 +3068,7 @@ function supplyCrate(x,z,rotY,loot){
     act(){
       openIt(); removeIt(it);
       if(ak){
-        S.ak = true; S.ammo = AK_MAG;
+        S.ak = true; S.mag = Object.assign({}, S.mag, {ak: AK_MAG});
         Snd.play('boltPull', 1.0);
         setTimeout(()=>Snd.play('boltRelease', 1.0), 180);
         setTimeout(()=>Snd.play('levelUp',.8), 220);
@@ -3313,10 +3333,12 @@ function caveOpenDoor(){
                  alive:true, vuln:false, blink:2.5 };
   bosses.push(sans);
 
-  /* 매머드 */
-  const mg = mammothModel(); mg.position.set(0,0,-46); world.add(mg);
-  bosses.push({ kind:'mammoth', g:mg, x:0, z:-46, hp:15000, max:15000, r:3.6,
-                alive:true, vuln:true, hitCd:0 });
+  /* 매머드 두 마리 */
+  [[-10,-44],[10,-48]].forEach(q=>{
+    const mg = mammothModel(); mg.position.set(q[0],0,q[1]); world.add(mg);
+    bosses.push({ kind:'mammoth', g:mg, x:q[0], z:q[1], hp:15000, max:15000, r:3.6,
+                  alive:true, vuln:true, hitCd:0 });
+  });
 
   /* 멧돼지 20마리 */
   for(let i=0;i<20;i++){
@@ -3325,7 +3347,7 @@ function caveOpenDoor(){
   }
   bossMusic(true);
   centerMsg('<h2>💀 ？？？</h2><p>"어이. 여기서부턴 못 지나가."</p>'+
-            '<p style="opacity:.85">매머드 한 마리와 멧돼지 스무 마리가 나타났다!</p>', 4200);
+            '<p style="opacity:.85">매머드 두 마리와 멧돼지 스무 마리가 나타났다!</p>', 4200);
   toast('💀 싸움이 시작되었어요!');
 }
 
@@ -3357,17 +3379,20 @@ function bossHit(b, dmg){
 /* ---------- 매 프레임 ---------- */
 function caveUpdate(dt){
   if(!CAVE.on){ elBoss.style.display = 'none'; return; }
-  const mam  = bosses.find(b=>b.kind==='mammoth');
+  const mams = bosses.filter(b=>b.kind==='mammoth');
+  const live = mams.filter(b=>b.alive);
   const sans = bosses.find(b=>b.kind==='sans');
 
-  if(CAVE.phase === 'fight' && mam && mam.alive && !paused && !dead){
-    /* 매머드가 천천히 다가와 들이받는다 */
-    const dx = player.x-mam.x, dz = player.z-mam.z, d = Math.hypot(dx,dz) || 1;
-    if(d > 4.2){ mam.x += dx/d*3.2*dt; mam.z += dz/d*3.2*dt; }
-    mam.g.position.set(mam.x, 0, mam.z);
-    mam.g.rotation.y = Math.atan2(dx, dz) + Math.PI;
-    mam.hitCd = Math.max(0, mam.hitCd - dt);
-    if(d < 5.0 && mam.hitCd <= 0){ mam.hitCd = 1.6; hurt(50); }
+  if(CAVE.phase === 'fight' && !paused && !dead){
+    /* 매머드들이 천천히 다가와 들이받는다 */
+    for(const mam of live){
+      const dx = player.x-mam.x, dz = player.z-mam.z, d = Math.hypot(dx,dz) || 1;
+      if(d > 4.2){ mam.x += dx/d*3.2*dt; mam.z += dz/d*3.2*dt; }
+      mam.g.position.set(mam.x, 0, mam.z);
+      mam.g.rotation.y = Math.atan2(dx, dz) + Math.PI;
+      mam.hitCd = Math.max(0, mam.hitCd - dt);
+      if(d < 5.0 && mam.hitCd <= 0){ mam.hitCd = 1.6; hurt(50); }
+    }
   }
   if(sans && sans.alive && !paused && !dead){
     sans.g.position.set(sans.x, Math.sin(clock.elapsedTime*1.6)*.18, sans.z);
@@ -3386,7 +3411,7 @@ function caveUpdate(dt){
   }
   /* 매머드와 멧돼지를 다 잡으면 그때부터 뼈다귀 아저씨를 맞힐 수 있다 */
   const left = Boars.list.length;
-  if(CAVE.phase === 'fight' && sans && !sans.vuln && (!mam || !mam.alive) && left === 0){
+  if(CAVE.phase === 'fight' && sans && !sans.vuln && live.length === 0 && left === 0){
     sans.vuln = true;
     sans.g.userData.glow.visible = true;
     sans.g.userData.lt.intensity = 2.2;
@@ -3402,11 +3427,13 @@ function caveUpdate(dt){
       elBossName.textContent = '💀 ？？？';
       elBossFill.style.width = (sans.hp/sans.max*100) + '%';
       elBossSub.textContent = Math.max(0,Math.round(sans.hp)) + ' / ' + sans.max;
-    } else if(mam){
-      elBossName.textContent = '🐘 매머드';
-      elBossFill.style.width = (Math.max(0,mam.hp)/mam.max*100) + '%';
-      elBossSub.textContent = Math.max(0,Math.round(mam.hp)).toLocaleString() +
-        ' / ' + mam.max.toLocaleString() + '   ·   🐗 멧돼지 ' + left + '마리 남음';
+    } else if(mams.length){
+      const hp = mams.reduce((a,b)=>a+Math.max(0,b.hp), 0);
+      const mx = mams.reduce((a,b)=>a+b.max, 0);
+      elBossName.textContent = '🐘 매머드 ' + live.length + '마리';
+      elBossFill.style.width = (hp/mx*100) + '%';
+      elBossSub.textContent = Math.round(hp).toLocaleString() + ' / ' + mx.toLocaleString() +
+        '   ·   🐗 멧돼지 ' + left + '마리 남음';
     }
   } else elBoss.style.display = 'none';
 }
@@ -5845,20 +5872,20 @@ function attack(){
 }
 /* 남은 총알을 화면에 보여 준다 */
 function drawAmmo(){
-  const on = (equipId==='ak');
+  const g0 = heldGun(), on = !!g0;
   elAmmo.style.display = on ? 'flex' : 'none';
   const rb = document.getElementById('rldBtn'), ab2 = document.getElementById('aimBtn');
   if(rb) rb.style.display = (on && usingTouch) ? 'flex' : 'none';
   if(ab2) ab2.style.display = (on && usingTouch) ? 'flex' : 'none';
   if(!on) return;
-  const n = S.ammo|0;
+  const n = ammoOf(g0)|0;
   elAmmo.classList.toggle('rld', reloadT>0);
   elAmmo.classList.toggle('empty', reloadT<=0 && n===0);
   elAmmo.classList.toggle('low', reloadT<=0 && n>0 && n<=8);
-  const mode = `<span class="fm">${autoFire?'연발':'단발'}</span>`;
+  const mode = magSize(g0) > 1 ? `<span class="fm">${autoFire?'연발':'단발'}</span>` : '';
   elAmmo.innerHTML = reloadT>0
     ? mode + '<span class="n">장전 중…</span>'
-    : mode + `<span class="n">${n}</span><span class="m">/ ${AK_MAG}</span>`;
+    : mode + `<span class="n">${n}</span><span class="m">/ ${magSize(g0)}</span>`;
 }
 /* 연발 ↔ 단발 (V 키) */
 function toggleFireMode(){
@@ -5874,9 +5901,10 @@ function toggleFireMode(){
 
 /* 장전 (R 키) */
 function reload(){
-  if(paused || dead || equipId!=='ak') return;
+  const g = heldGun();
+  if(paused || dead || !g) return;
   if(reloadT>0) return;
-  if((S.ammo|0) >= AK_MAG){ toast('🔫 탄창이 이미 가득 찼어요'); return; }
+  if(ammoOf(g) >= magSize(g)){ toast('🔫 탄창이 이미 가득 찼어요'); return; }
   /* sounds/reload.mp3 를 넣어 두면 그 소리 하나로 장전 전체를 대신한다 */
   if(Snd.hasFile('reload')){
     reloadDur = Math.max(1.0, Math.min(4.0, Snd.dur('reload')));
@@ -5884,7 +5912,7 @@ function reload(){
     RC = reloadCues();                         // 동작을 그 소리에 맞춘다
     Snd.play('reload', 1.0);
   } else {
-    reloadDur = AK_RELOAD;
+    reloadDur = g.reloadSec || AK_RELOAD;
     reloadStep = 0;
     RC = Object.assign({}, RC_DEFAULT);
   }
@@ -5903,8 +5931,8 @@ function updateReload(dt){
     reloadStep++;
   }
   if(reloadT===0){
-    S.ammo = AK_MAG;
-    toast(`🔫 장전 완료 — ${AK_MAG}발`);
+    const g = heldGun();
+    if(g){ setAmmo(g, magSize(g)); toast(`🔫 장전 완료 — ${magSize(g)}발`); }
   }
   drawAmmo();
 }
@@ -5912,7 +5940,7 @@ function updateReload(dt){
 /* 총 쏘기 : 화면 가운데를 향해 한 발 */
 function shoot(it, now){
   if(reloadT>0) return;                       // 장전하는 동안에는 못 쏜다
-  if((S.ammo|0) <= 0){
+  if(ammoOf(it) <= 0){
     atkAt = now;
     if(now - emptyAt > 700){
       emptyAt = now;
@@ -5921,9 +5949,9 @@ function shoot(it, now){
     }
     return;
   }
-  S.ammo--; drawAmmo();
+  setAmmo(it, ammoOf(it) - 1); drawAmmo();
   atkAt = now; swingT = 0.16;
-  Snd.play('gunShot', 1.0);
+  Snd.play(it.shotSnd || 'gunShot', 1.0);
   camShake = Math.max(camShake, aiming ? .34 : .60);
   /* 반동 : 쏠수록 총구가 들린다 (연발이 더 심하다) */
   const kick = (autoFire ? .011 : .005) * (aiming ? .55 : 1);
@@ -6160,7 +6188,8 @@ function startEra(){
   hpSet(PLAYER_HP); hurtT = 0;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
-  if(S.ak) S.ammo = AK_MAG;                       // 새 시대에서는 탄창을 채워 준다
+  /* 새 시대에서는 가진 총의 탄창을 모두 채워 준다 */
+  for(const it of ITEMS) if(it.gun && it.have()) setAmmo(it, magSize(it));
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
   drawAmmo();
   elHotbar.dataset.sig = '';
