@@ -3367,6 +3367,14 @@ function bossMusic(on){
   }catch(e){}
 }
 
+/* 동굴 안에서는 통로와 보스방 밖으로 나갈 수 없다.
+   바위 사이 틈으로 빠져나가면 아무것도 없는 캄캄한 곳에 서게 되기 때문입니다. */
+function caveClamp(){
+  if(Math.abs(player.x) <= 8.2 && player.z >= -14 && player.z <= 50) return;   // 통로 안
+  const dx = player.x, dz = player.z + 40, d = Math.hypot(dx, dz) || 1;
+  if(d > 27){ player.x = dx/d*27; player.z = -40 + dz/d*27; }                  // 보스방 안으로
+}
+
 /* ---------- 들어가고 나오기 ---------- */
 function caveEnter(){
   if(!S.ak){ toast('🔦 캄캄해서 그냥은 못 들어가요'); return; }
@@ -6706,6 +6714,7 @@ function tick(){
       }
       player.x=Math.max(-BOUND,Math.min(BOUND,nx));
       player.z=Math.max(-BOUND,Math.min(BOUND,nz));
+      if(CAVE.on) caveClamp();
     }
   }
 
