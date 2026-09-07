@@ -3176,7 +3176,21 @@ function supplyCrate(x,z,rotY,loot){
 let bosses = [];                     // 지금 살아 있는 큰 적들
 const CAVE = { on:false, phase:'walk', keep:null, saved:null, back:{x:40,z:-24} };
 let gdT = 6;                          // 다음 2D 공격까지 남은 시간
-const SURVIVE_SEC = 120;              // 다 잡은 뒤 버텨야 하는 시간(초)
+const SURVIVE_SEC = 600;              // 다 잡은 뒤 버텨야 하는 시간(초) — 10분
+const SANS_HP = 15000000;             // 1500만
+/* 1500만을 10분 안에 깎으려면 한 발이 그만큼 커야 한다.
+   AK 150 x 50 = 7,500 / RPG 1972 x 50 = 98,600
+   AK 로만 잡으려면 2,000발쯤 필요하다 (탄창 67개) */
+const SANS_DMG_MUL = 50;
+
+/* 15억을 '15억' 처럼 읽기 쉽게 */
+function korNum(n){
+  n = Math.max(0, Math.round(n));
+  const eok = Math.floor(n/100000000), man = Math.floor((n%100000000)/10000);
+  if(eok) return eok + '억 ' + man.toLocaleString() + '만';
+  if(man) return man.toLocaleString() + '만';
+  return n.toLocaleString();
+}
 
 /* ---------------------------------------------------------
    샌즈의 공격 — 화면에 뜨는 2D 점프 판
@@ -3184,16 +3198,19 @@ const SURVIVE_SEC = 120;              // 다 잡은 뒤 버텨야 하는 시간(
    판이 떠 있는 동안 바깥 세계는 잠시 멈춘다.
    --------------------------------------------------------- */
 const GD = {
-  on:false, t:0, life:6, spd:330, cube:{y:0, vy:0}, spikes:[], next:0, hits:0,
+  on:false, t:0, lv:0, life:6, spd:330, cube:{y:0, vy:0}, spikes:[], next:0, hits:0,
   GROUND:158, SIZE:26, X:96, G:2300, JUMP:-730, DMG:12,
 
-  start(){
+  start(level){
     if(this.on) return;
-    this.on = true; this.t = 0; this.life = 6;
-    this.spd = 330; this.cube.y = 0; this.cube.vy = 0;
-    this.spikes = []; this.next = .55; this.hits = 0;
+    const L = Math.max(0, Math.min(1, level || 0));      // 0 = 처음, 1 = 마지막
+    this.on = true; this.t = 0; this.lv = L;
+    this.life = 6 + L*3;                                 // 6초 → 9초
+    this.spd  = 320 + L*280;                             // 320 → 600
+    this.cube.y = 0; this.cube.vy = 0;
+    this.spikes = []; this.next = .6; this.hits = 0;
     elGd.style.display = 'block';
-    elGdName.textContent = '💀 피해라!';
+    elGdName.textContent = '💀 피해라!' + (L > .05 ? '  ' + '★'.repeat(1+Math.floor(L*4)) : '');
     paused = true; exitLock();
     Snd.play('nightFall', .6);
   },
@@ -3211,7 +3228,7 @@ const GD = {
     if(!this.on) return;
     dt = Math.min(dt, .05);
     this.t += dt; this.life -= dt;
-    this.spd += dt*16;                                  // 조금씩 빨라진다
+    this.spd += dt*(14 + this.lv*18);                   // 조금씩 빨라진다
     /* 네모 */
     this.cube.vy += this.G*dt;
     this.cube.y  -= this.cube.vy*dt;
@@ -3219,8 +3236,10 @@ const GD = {
     /* 가시 만들기 — 넘을 수 있는 간격을 지킨다 */
     this.next -= dt;
     if(this.next <= 0){
-      this.next = Math.max(.62, 260/this.spd) + Math.random()*.35;
-      const n = Math.random() < .25 ? 2 : 1;            // 가끔 두 개가 붙어 나온다
+      /* 넘을 수 있는 간격은 지키면서, 갈수록 촘촘해진다 */
+      this.next = Math.max(.62, 320/this.spd) + Math.random()*(.34 - this.lv*.20);
+      const r = Math.random();
+      const n = r < .12 + this.lv*.28 ? 3 : (r < .32 + this.lv*.40 ? 2 : 1);
       for(let i=0;i<n;i++) this.spikes.push({x: 660 + i*30, hit:false});
     }
     /* 가시 옮기기 · 부딪힘 */
@@ -3632,7 +3651,7 @@ function caveOpenDoor(){
 
   /* 뼈다귀 아저씨 */
   const sg = sansModel(); sg.position.set(0,0,-58); world.add(sg);
-  const sans = { kind:'sans', g:sg, x:0, z:-58, hp:3000, max:3000, r:1.5,
+  const sans = { kind:'sans', g:sg, x:0, z:-58, hp:SANS_HP, max:SANS_HP, r:1.5,
                  alive:true, vuln:false, trial:false, survive:SURVIVE_SEC, blink:2.5 };
   bosses.push(sans);
 
@@ -3657,6 +3676,7 @@ function caveOpenDoor(){
 /* ---------- 큰 적이 맞았을 때 ---------- */
 function bossHit(b, dmg){
   if(!b.alive || !b.vuln) return false;
+  if(b.kind === 'sans') dmg *= SANS_DMG_MUL;
   b.hp -= dmg;
   pickFx(b.x, b.kind==='mammoth' ? 3.5 : 2.0, b.z, 0xffd76a);
   if(b.hp <= 0){
@@ -3680,6 +3700,58 @@ function bossHit(b, dmg){
 }
 
 /* ---------- 매 프레임 ---------- */
+/* ---------- 필살기 : 사방으로 뻗는 레이저 ---------- */
+function caveLaser(sans){
+  if(dead) return;
+  paused = true; exitLock();
+  bossMusic(false);
+  Snd.play('nightFall', 1.0);
+  camShake = 2.2;
+  centerMsg('<h2>💀 …</h2><p>"시간 다 됐어."</p>', 1600);
+
+  const beams = [];
+  const sx = sans.x, sz = sans.z, sy = 2.0;
+  /* 그림처럼 여러 갈래가 한 점에서 뻗어 나간다 */
+  for(let i=0;i<11;i++){
+    const a  = i/11*TAU + Math.random()*.2;
+    const el = -0.15 + Math.random()*0.55;
+    const len = 70;
+    const geo = new THREE.CylinderGeometry(.42,.42,len,7,1,true);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color:0x9fe6ff, transparent:true, opacity:0, fog:false, side:THREE.DoubleSide }));
+    const dir = new THREE.Vector3(Math.cos(a), el, Math.sin(a)).normalize();
+    m.position.set(sx + dir.x*len/2, sy + dir.y*len/2, sz + dir.z*len/2);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+    m.userData.noHole = true; world.add(m); beams.push(m);
+  }
+  const flash = new THREE.PointLight(0x9fe6ff, 0, 90, 1.4);
+  flash.position.set(sx, sy, sz); world.add(flash);
+  if(sans.g.userData.lt) sans.g.userData.lt.intensity = 6;
+
+  let t = 0;
+  const f = (tt, dt)=>{
+    t += dt;
+    const grow = Math.min(1, t/0.45);
+    for(const b of beams){
+      b.material.opacity = t < 1.5 ? (.25 + grow*.75) : Math.max(0, .95 - (t-1.5)*1.6);
+      b.scale.set(grow*(1+Math.sin(t*30)*.08), 1, grow*(1+Math.sin(t*30)*.08));
+    }
+    flash.intensity = t < 1.4 ? 6*grow : Math.max(0, 6 - (t-1.4)*10);
+    if(t > 2.1){
+      for(const b of beams) world.remove(b);
+      world.remove(flash); removeAnim(f);
+    }
+  };
+  animated.push(f);
+
+  setTimeout(()=>{
+    for(const b of beams) world.remove(b);
+    world.remove(flash);
+    paused = false;
+    hurt(9999, true, 'laser');              // 피할 수 없다
+  }, 1500);
+}
+
 function caveUpdate(dt){
   if(!CAVE.on){ elBoss.style.display = 'none'; return; }
   const mams = bosses.filter(b=>b.kind==='mammoth');
@@ -3702,17 +3774,16 @@ function caveUpdate(dt){
     if(!paused) sans.survive -= dt;
     if(!GD.on){
       gdT -= dt;
-      if(gdT <= 0){ gdT = 5.5 + Math.random()*2.5; GD.start(); }
+      if(gdT <= 0){
+        const lv = 1 - (sans.survive / SURVIVE_SEC);     // 시간이 갈수록 어려워진다
+        gdT = (6.5 - lv*2.5) + Math.random()*2.5;
+        GD.start(lv);
+      }
     }
     if(sans.survive <= 0){
-      sans.survive = 0; sans.trial = false; sans.vuln = true;
+      sans.survive = 0; sans.trial = false;
       if(GD.on) GD.finish();
-      sans.g.userData.glow.visible = true;
-      sans.g.userData.lt.intensity = 2.2;
-      Snd.play('levelUp', .9);
-      centerMsg('<h2>💀 …</h2><p>"버텼네."</p>'+
-                '<p style="opacity:.85">이제 그를 <b>맞힐 수 있다.</b></p>', 4000);
-      toast('🔫 이제 쏠 수 있어요!');
+      caveLaser(sans);                            // 시간이 다 됐다 — 필살기
     }
   }
   if(sans && sans.alive && !paused && !dead){
@@ -3734,26 +3805,29 @@ function caveUpdate(dt){
   const left = Boars.list.length;
   if(CAVE.phase === 'fight' && sans && !sans.vuln && !sans.trial &&
      live.length === 0 && left === 0){
-    sans.trial = true; sans.survive = SURVIVE_SEC; gdT = 2.5;
+    sans.trial = true; sans.vuln = true;          // 판이 없는 동안에는 쏠 수 있다
+    sans.survive = SURVIVE_SEC; gdT = 3;
+    sans.g.userData.glow.visible = true;
+    sans.g.userData.lt.intensity = 2.2;
     Snd.play('nightFall', .9);
     centerMsg('<h2>💀 !</h2><p>"…진심으로 하는 거구나."</p>'+
-              '<p style="opacity:.85"><b>2분</b>만 버텨 봐.<br>'+
-              '화면에 판이 뜨면 <b>Space</b> 로 가시를 넘으세요!</p>', 4600);
+              '<p style="opacity:.85"><b>10분</b> 안에 끝내 봐.<br>'+
+              '판이 안 뜰 때 쏘고, 판이 뜨면 <b>Space</b> 로 가시를 넘으세요!</p>', 5200);
   }
 
   /* 체력 막대 */
   if(CAVE.phase === 'fight'){
     elBoss.style.display = 'block';
-    if(sans && sans.vuln){
+    if(sans && sans.vuln && !sans.trial){
       elBossName.textContent = '💀 ？？？';
       elBossFill.style.width = (sans.hp/sans.max*100) + '%';
-      elBossSub.textContent = Math.max(0,Math.round(sans.hp)) + ' / ' + sans.max;
+      elBossSub.textContent = korNum(sans.hp) + ' / ' + korNum(sans.max);
     } else if(sans && sans.trial){
       const left2 = Math.max(0, sans.survive);
       const mm = Math.floor(left2/60), ss = Math.floor(left2%60);
-      elBossName.textContent = '💀 버텨라!';
-      elBossFill.style.width = (left2/SURVIVE_SEC*100) + '%';
-      elBossSub.textContent = '남은 시간 ' + mm + ':' + String(ss).padStart(2,'0');
+      elBossName.textContent = '💀 ？？？   ⏳ ' + mm + ':' + String(ss).padStart(2,'0');
+      elBossFill.style.width = (sans.hp/sans.max*100) + '%';
+      elBossSub.textContent = korNum(sans.hp) + ' / ' + korNum(sans.max);
     } else if(mams.length){
       const hp = mams.reduce((a,b)=>a+Math.max(0,b.hp), 0);
       const mx = mams.reduce((a,b)=>a+b.max, 0);
@@ -4014,7 +4088,7 @@ function hpSet(v){
   elHp.classList.toggle('low', S.hp <= 34);
 }
 /* 다치면 화면이 붉어지고 체력이 줄어든다 */
-function hurt(amount, force){
+function hurt(amount, force, cause){
   if(dead || (paused && !force)) return;
   hurtT = 0;
   hpSet((S.hp==null?PLAYER_HP:S.hp) - amount);
@@ -4023,7 +4097,7 @@ function hurt(amount, force){
   elHurt.style.transition = 'opacity .12s';
   elHurt.style.opacity = '.55';
   setTimeout(()=>{ if(!dead) elHurt.style.opacity = '0'; }, 160);
-  if(S.hp <= 0) gameOver('boar');
+  if(S.hp <= 0) gameOver(cause || 'boar');
 }
 /* 다치지 않고 한참 지나면 조금씩 낫는다 */
 function updateHp(dt){
@@ -6391,8 +6465,9 @@ function shoot(it, now){
 function gameOver(cause){
   if(dead) return;
   dead = true;
-  const starved = (cause === 'hunger');
-  const title = starved ? '🍖 배고파서 쓰러졌어요!' : '🐗 멧돼지에게 잡혔어요!';
+  const starved = (cause === 'hunger'), lasered = (cause === 'laser');
+  const title = lasered ? '💀 시간을 넘겼어요!'
+              : starved ? '🍖 배고파서 쓰러졌어요!' : '🐗 멧돼지에게 잡혔어요!';
   Snd.play(starved ? 'claySoft' : 'boarHit'); Snd.fadeOut(0.9);
   camShake = 2.0;
   paused = true; exitLock(); hideCenter();
@@ -6413,7 +6488,14 @@ function gameOver(cause){
 
   const era = ERAS[S.eraIndex];
   setTimeout(()=>{
-    const body = starved ? `
+    const body = lasered ? `
+      <p>10분 안에 끝내지 못하자 <b>레이저</b>가 날아왔어요.</p>
+      <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
+        <p style="margin:0;font-size:14px;line-height:1.7">
+          💡 판이 안 뜨는 동안 <b>쉬지 말고 쏘세요.</b><br>
+          🚀 <b>RPG</b>가 훨씬 셉니다. 한 발에 1972.<br>
+          🏃 가시 판에서 체력을 아껴야 오래 버팁니다.</p>
+      </div>` : starved ? `
       <p>먹을거리를 구하는 일은 선사시대 사람들에게<br>
          <b>하루하루의 생존</b>이었어요.</p>
       <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
