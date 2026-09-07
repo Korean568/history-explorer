@@ -3176,8 +3176,8 @@ function supplyCrate(x,z,rotY,loot){
 let bosses = [];                     // 지금 살아 있는 큰 적들
 const CAVE = { on:false, phase:'walk', keep:null, saved:null, back:{x:40,z:-24} };
 let gdT = 6;                          // 다음 2D 공격까지 남은 시간
-const SURVIVE_SEC = 600;              // 다 잡은 뒤 버텨야 하는 시간(초) — 10분
-const SANS_HP = 150000;               // AK 150 데미지로 딱 1,000발 (탄창 34개)
+const SURVIVE_SEC = 900;              // 다 잡은 뒤 버텨야 하는 시간(초) — 15분
+const SANS_HP = 15000;                // AK 150 데미지로 딱 100발 (탄창 4개)
 const SANS_DMG_MUL = 1;               // 그대로 들어간다
 
 /* 15억을 '15억' 처럼 읽기 쉽게 */
@@ -3808,7 +3808,7 @@ function caveUpdate(dt){
     sans.g.userData.lt.intensity = 2.2;
     Snd.play('nightFall', .9);
     centerMsg('<h2>💀 !</h2><p>"…진심으로 하는 거구나."</p>'+
-              '<p style="opacity:.85"><b>10분</b> 안에 끝내 봐.<br>'+
+              '<p style="opacity:.85"><b>15분</b> 안에 끝내 봐.<br>'+
               '판이 안 뜰 때 쏘고, 판이 뜨면 <b>Space</b> 로 가시를 넘으세요!</p>', 5200);
   }
 
@@ -6497,7 +6497,7 @@ function gameOver(cause){
           🔺 가시가 <b>두세 개 붙어</b> 나와도 한 번만 뛰면 넘어갑니다.<br>
           ❤️ 판 사이사이에 <b>8초 동안 안 맞으면</b> 체력이 조금씩 회복됩니다.</p>
       </div>` : lasered ? `
-      <p>10분 안에 끝내지 못하자 <b>레이저</b>가 날아왔어요.</p>
+      <p>15분 안에 끝내지 못하자 <b>레이저</b>가 날아왔어요.</p>
       <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
         <p style="margin:0;font-size:14px;line-height:1.7">
           💡 판이 안 뜨는 동안 <b>쉬지 말고 쏘세요.</b><br>
