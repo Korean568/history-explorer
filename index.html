@@ -3177,11 +3177,8 @@ let bosses = [];                     // 지금 살아 있는 큰 적들
 const CAVE = { on:false, phase:'walk', keep:null, saved:null, back:{x:40,z:-24} };
 let gdT = 6;                          // 다음 2D 공격까지 남은 시간
 const SURVIVE_SEC = 600;              // 다 잡은 뒤 버텨야 하는 시간(초) — 10분
-const SANS_HP = 15000000;             // 1500만
-/* 1500만을 10분 안에 깎으려면 한 발이 그만큼 커야 한다.
-   AK 150 x 50 = 7,500 / RPG 1972 x 50 = 98,600
-   AK 로만 잡으려면 2,000발쯤 필요하다 (탄창 67개) */
-const SANS_DMG_MUL = 50;
+const SANS_HP = 150000;               // AK 150 데미지로 딱 1,000발 (탄창 34개)
+const SANS_DMG_MUL = 1;               // 그대로 들어간다
 
 /* 15억을 '15억' 처럼 읽기 쉽게 */
 function korNum(n){
@@ -3249,7 +3246,7 @@ const GD = {
       if(sp.x < -40){ this.spikes.splice(i,1); continue; }
       if(!sp.hit && Math.abs(sp.x - this.X) < 24 && this.cube.y < 24){
         sp.hit = true; this.hits++;
-        hurt(this.DMG, true);                            // 판이 떠 있어도 아프다
+        hurt(this.DMG, true, 'spike');                   // 판이 떠 있어도 아프다
         Snd.play('stoneHit', .8);
       }
     }
@@ -3821,13 +3818,15 @@ function caveUpdate(dt){
     if(sans && sans.vuln && !sans.trial){
       elBossName.textContent = '💀 ？？？';
       elBossFill.style.width = (sans.hp/sans.max*100) + '%';
-      elBossSub.textContent = korNum(sans.hp) + ' / ' + korNum(sans.max);
+      elBossSub.textContent = Math.max(0,Math.round(sans.hp)).toLocaleString() +
+                              ' / ' + sans.max.toLocaleString();
     } else if(sans && sans.trial){
       const left2 = Math.max(0, sans.survive);
       const mm = Math.floor(left2/60), ss = Math.floor(left2%60);
       elBossName.textContent = '💀 ？？？   ⏳ ' + mm + ':' + String(ss).padStart(2,'0');
       elBossFill.style.width = (sans.hp/sans.max*100) + '%';
-      elBossSub.textContent = korNum(sans.hp) + ' / ' + korNum(sans.max);
+      elBossSub.textContent = Math.max(0,Math.round(sans.hp)).toLocaleString() +
+                              ' / ' + sans.max.toLocaleString();
     } else if(mams.length){
       const hp = mams.reduce((a,b)=>a+Math.max(0,b.hp), 0);
       const mx = mams.reduce((a,b)=>a+b.max, 0);
@@ -6465,8 +6464,10 @@ function shoot(it, now){
 function gameOver(cause){
   if(dead) return;
   dead = true;
-  const starved = (cause === 'hunger'), lasered = (cause === 'laser');
+  const starved = (cause === 'hunger'), lasered = (cause === 'laser'),
+        spiked  = (cause === 'spike');
   const title = lasered ? '💀 시간을 넘겼어요!'
+              : spiked  ? '🔺 가시에 찔렸어요!'
               : starved ? '🍖 배고파서 쓰러졌어요!' : '🐗 멧돼지에게 잡혔어요!';
   Snd.play(starved ? 'claySoft' : 'boarHit'); Snd.fadeOut(0.9);
   camShake = 2.0;
@@ -6488,7 +6489,14 @@ function gameOver(cause){
 
   const era = ERAS[S.eraIndex];
   setTimeout(()=>{
-    const body = lasered ? `
+    const body = spiked ? `
+      <p>가시 판에서 체력이 다 떨어졌어요.</p>
+      <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
+        <p style="margin:0;font-size:14px;line-height:1.7">
+          💡 가시가 <b>바로 앞에 왔을 때</b> Space 를 누르세요. 너무 일찍 누르면 먼저 내려앉아요.<br>
+          🔺 가시가 <b>두세 개 붙어</b> 나와도 한 번만 뛰면 넘어갑니다.<br>
+          ❤️ 판 사이사이에 <b>8초 동안 안 맞으면</b> 체력이 조금씩 회복됩니다.</p>
+      </div>` : lasered ? `
       <p>10분 안에 끝내지 못하자 <b>레이저</b>가 날아왔어요.</p>
       <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
         <p style="margin:0;font-size:14px;line-height:1.7">
