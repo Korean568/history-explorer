@@ -3844,13 +3844,14 @@ function caveSpare(sans){
     Talk.say('💀 Sans',
       '<b>"기꺼이 그러지."</b>',
       [ { t:'▶ 다음', cls:'truth', fn:()=>{
-          S.sansAlly = true;
+          S.sansAlly = (S.sansAlly || 0) + 1;      // 이길 때마다 한 명씩 늘어난다
           Snd.play('levelUp', .9);
           world.remove(sans.g);
           centerMsg('<h2>🤝 샌즈가 함께한다!</h2>'+
                     '<p>위험할 때 나타나 <b>멧돼지를 대신 처리해</b> 줍니다.</p>'+
-                    '<p style="opacity:.85">남은 <b>RPG</b> 도 주웠다.</p>', 3400);
-          toast('🤝 샌즈가 부하가 되었어요!');
+                    '<p style="opacity:.85">지금 부하는 <b>' + S.sansAlly + '명</b>. '+
+                    '남은 <b>RPG</b> 도 주웠다.</p>', 3400);
+          toast('🤝 부하 샌즈 ' + S.sansAlly + '명!');
           caveReward();
         } } ]);
   }
@@ -3897,76 +3898,75 @@ function updateSceneFx(dt){
 
 /* 부하 샌즈가 보스의 공격을 막고 되받아친다 */
 function allyClash(sans){
-  if(!ally) return;
-  /* ① 보스가 쏜다 → ② 부하가 막는다 */
+  const n = allies.length;
+  if(!n) return;
+  /* ① 보스가 쏜다 → ② 부하들이 막는다 */
   fxBeam(sans.x, 2.0, sans.z, player.x, 1.4, player.z, 0xff6a6a, .20, .16);
   fxShield(player.x, 1.3, player.z);
   Snd.play('gunShot', .45);
-  toast('🛡️ 부하 샌즈가 막아 냈어요!');
-  /* ③ 반격 */
+  toast('🛡️ 부하 샌즈 ' + n + '명이 막아 냈어요!');
+  /* ③ 다 함께 반격 — 많을수록 세다 */
   setTimeout(()=>{
-    if(!ally || !sans.alive) return;
-    fxBeam(ally.x, 1.5, ally.z, sans.x, 2.0, sans.z, 0x9fe6ff, .26, .14);
+    if(!sans.alive) return;
+    for(const a of allies)
+      fxBeam(a.x, 1.5, a.z, sans.x, 2.0, sans.z, 0x9fe6ff, .26, .14);
     Snd.play('metalStir', .8);
-    bossHit(sans, 900);
+    bossHit(sans, 900 * allies.length);
   }, 280);
 }
 
 /* ---------- 부하가 된 샌즈 ----------
    바깥 세계에서 따라다니다가, 멧돼지가 다가오면 대신 처리해 줍니다. */
-let ally = null;
-function updateAlly(dt, t){
-  if(!S.sansAlly || dead){
-    if(ally){ scene.remove(ally.g); if(ally.beam) scene.remove(ally.beam); ally = null; }
-    return;
-  }
-  if(!ally){
-    const g = sansModel(); g.scale.setScalar(.55); scene.add(g);
-    ally = { g, x:player.x, z:player.z, cd:0, beam:null, life:0 };
-  }
-  /* 왼쪽 뒤에서 따라온다 */
-  const sN = Math.sin(yaw), cN = Math.cos(yaw);
-  const tx = player.x - 2.3*cN + 1.6*sN;
-  const tz = player.z + 2.3*sN + 1.6*cN;
-  const k = Math.min(1, dt*3.2);
-  ally.x += (tx-ally.x)*k; ally.z += (tz-ally.z)*k;
-  ally.g.position.set(ally.x, 0.9 + Math.sin(t*1.7)*0.10, ally.z);
-  ally.g.rotation.y = Math.atan2(player.x-ally.x, player.z-ally.z);
+let allies = [];                       // 부하 샌즈들 (여러 명이 될 수 있다)
+const allyCount = ()=> Math.max(0, S.sansAlly || 0);
 
-  /* 쏜 빛줄기가 사라지는 중 */
-  if(ally.beam){
-    ally.life -= dt;
-    ally.beam.material.opacity = Math.max(0, ally.life*4);
-    if(ally.life <= 0){ scene.remove(ally.beam); ally.beam = null; }
+function updateAlly(dt, t){
+  const want = dead ? 0 : allyCount();
+  /* 수를 맞춘다 */
+  while(allies.length > want){
+    const a = allies.pop();
+    scene.remove(a.g);
   }
+  while(allies.length < want){
+    const g = sansModel(); g.scale.setScalar(.55); scene.add(g);
+    allies.push({ g, x:player.x, z:player.z, cd: allies.length*0.5 });
+  }
+  if(!allies.length) return;
+
+  const n = allies.length;
+  allies.forEach((a, i)=>{
+    /* 뒤쪽에 부채꼴로 늘어선다 */
+    const phi = yaw + (i - (n-1)/2) * 0.55;
+    const tx = player.x + Math.sin(phi)*2.9;
+    const tz = player.z + Math.cos(phi)*2.9;
+    const k = Math.min(1, dt*3.2);
+    a.x += (tx-a.x)*k; a.z += (tz-a.z)*k;
+    a.g.position.set(a.x, 0.9 + Math.sin(t*1.7 + i*1.3)*0.10, a.z);
+    a.g.rotation.y = Math.atan2(player.x-a.x, player.z-a.z);
+  });
   if(paused) return;
 
-  /* 쫓아오는 멧돼지를 대신 처리한다 */
-  ally.cd = Math.max(0, ally.cd - dt);
-  if(ally.cd > 0) return;
-  let best = -1, bd = 16;
-  for(let i=0;i<Boars.list.length;i++){
-    const b = Boars.list[i];
-    const d = Math.hypot(b.x-player.x, b.z-player.z);
-    if(d < bd){ bd = d; best = i; }
+  /* 저마다 가까운 멧돼지를 하나씩 맡는다 — 많을수록 빨리 정리된다 */
+  const taken = {};
+  for(const a of allies){
+    a.cd = Math.max(0, a.cd - dt);
+    if(a.cd > 0) continue;
+    let best = -1, bd = 16;
+    for(let i=0;i<Boars.list.length;i++){
+      if(taken[i]) continue;
+      const b = Boars.list[i];
+      const d = Math.hypot(b.x-player.x, b.z-player.z);
+      if(d < bd){ bd = d; best = i; }
+    }
+    if(best < 0) continue;
+    taken[best] = true;
+    const b = Boars.list[best];
+    a.cd = 2.2;
+    fxBeam(a.x, 1.5, a.z, b.x, .9, b.z, 0x9fe6ff, .25, .10);
+    if(a.g.userData.glow) a.g.userData.glow.visible = true;
+    Snd.throttle('metalStir', 120, .6);
+    Boars.kill(best, true);
   }
-  if(best < 0) return;
-  const b = Boars.list[best];
-  ally.cd = 2.2;
-  /* 빛줄기 */
-  const from = new THREE.Vector3(ally.x, 1.5, ally.z);
-  const to   = new THREE.Vector3(b.x, .9, b.z);
-  const dir  = to.clone().sub(from); const len = dir.length();
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(.10,.10,len,7),
-    new THREE.MeshBasicMaterial({color:0x9fe6ff, transparent:true, opacity:1, fog:false}));
-  m.position.copy(from).addScaledVector(dir, .5);
-  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
-  scene.add(m);
-  if(ally.beam) scene.remove(ally.beam);
-  ally.beam = m; ally.life = .25;
-  if(ally.g.userData.glow) ally.g.userData.glow.visible = true;
-  Snd.play('metalStir', .6);
-  Boars.kill(best, true);
 }
 
 /* ---------- 필살기 : 사방으로 뻗는 레이저 ---------- */
