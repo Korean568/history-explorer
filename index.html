@@ -3548,9 +3548,11 @@ function buildCave(){
     wall(-9.5+rr(-1,1), z, rr(2.6,4.2));
     wall( 9.5+rr(-1,1), z, rr(2.6,4.2));
   }
-  /* 통로 안의 돌덩이 (거의 이것뿐입니다) */
+  /* 통로 안의 돌덩이 (거의 이것뿐입니다)
+     가운데는 비워 둔다 — 안 그러면 문지기 멧돼지가 돌에 껴서 못 움직인다 */
   for(let i=0;i<26;i++){
-    const x = rr(-7,7), z = rr(-10,46);
+    const x = (Math.random()<.5 ? -1 : 1) * rr(3.2, 7.2);
+    const z = rr(-10,46);
     const m = new THREE.Mesh(new THREE.DodecahedronGeometry(rr(.5,1.5),0), M(0x7b7168));
     m.position.set(x, .4, z); m.rotation.set(rr(0,1),rr(0,TAU),rr(0,1));
     world.add(m); colliders.push({x, z, r:1.0});
