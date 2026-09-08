@@ -423,13 +423,10 @@
   #reticle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     width:190px;height:190px;display:none;border-radius:50%;
     border:2px solid rgba(20,20,20,.75);
-    box-shadow:0 0 0 2000px rgba(8,8,10,.55);}
-  #reticle i{position:absolute;background:#e0342c;}
-  #reticle .v{left:50%;top:8%;width:2px;height:34%;transform:translateX(-50%);}
-  #reticle .h{top:50%;left:8%;height:2px;width:34%;transform:translateY(-50%);}
-  #reticle .dot{left:50%;top:50%;width:6px;height:6px;border-radius:50%;
-    transform:translate(-50%,-50%);box-shadow:0 0 6px rgba(224,52,44,.9);}
-  #reticle .v:last-of-type{}
+    box-shadow:0 0 0 2000px rgba(0,0,0,.20);}
+  #reticle .dot{position:absolute;left:50%;top:50%;width:7px;height:7px;border-radius:50%;
+    background:#e0342c;transform:translate(-50%,-50%);
+    box-shadow:0 0 7px rgba(224,52,44,.95);}
   @media (max-width:620px){ #reticle{width:150px;height:150px;} }
 
   /* ---------- 말상자 ---------- */
@@ -654,7 +651,7 @@
     <div id="gdHint">Space · 클릭 — 점프</div>
   </div>
   <div id="crosshair"></div>
-  <div id="reticle"><i class="v"></i><i class="h"></i><i class="dot"></i></div>
+  <div id="reticle"><i class="dot"></i></div>
   <div id="joy"><i></i></div>
   <button id="runBtn">🏃<span>달리기</span></button>
   <button id="atkBtn">⚔️<span>공격</span></button>
@@ -1977,14 +1974,15 @@ function akModel(){
     ring.position.set(0,.104,q[0]); scope.add(ring);
   });
   const rail = boxM(.046,.016,.220, SC2); rail.position.set(0,.074,-.058); scope.add(rail);
-  const body = tubeM(.030,.300,SC,10);   body.position.set(0,.146,-.058); scope.add(body);
-  const bell = cylM(.042,.032,.070,10,SC); bell.rotation.x=Math.PI/2;
-  bell.position.set(0,.146,-.226); scope.add(bell);
-  const eye2 = cylM(.038,.032,.060,10,SC); eye2.rotation.x=Math.PI/2;
-  eye2.position.set(0,.146,.100); scope.add(eye2);
-  const lens = new THREE.Mesh(new THREE.CircleGeometry(.031,12),
-    new THREE.MeshBasicMaterial({color:0x2a4a63}));
-  lens.position.set(0,.146,.131); scope.add(lens);
+  /* 속이 뚫린 통 — 들여다보면 앞이 보인다 */
+  const openTube = (r1,r2,h,col)=>{
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,12,1,true),
+      new THREE.MeshLambertMaterial({color:col, flatShading:true, side:THREE.DoubleSide}));
+    m.rotation.x = Math.PI/2; return m;
+  };
+  const body = openTube(.030,.030,.300,SC); body.position.set(0,.146,-.058); scope.add(body);
+  const bell = openTube(.042,.032,.070,SC); bell.position.set(0,.146,-.226); scope.add(bell);
+  const eye2 = openTube(.038,.032,.060,SC); eye2.position.set(0,.146,.100);  scope.add(eye2);
   const knob = cylM(.016,.016,.030,8,SC2); knob.rotation.z=Math.PI/2;
   knob.position.set(.030,.146,-.058); scope.add(knob);
   scope.visible = false; g.add(scope);
@@ -2344,6 +2342,8 @@ function updateHand(dt, t){
     }
     it.view.position.set(qx+e*.020*(1-k*.6), qy+bob-e*.006, qz+e*.075);
     it.view.rotation.set(ax+e*.26, ay, az+bob*.5);
+    /* 조준경을 들여다보는 동안에는 총을 감춘다 — 조준경 화면만 보인다 */
+    it.view.visible = !(S.akScope && it.id === 'ak' && aimK > .55);
     /* 화면 기준으로 한 번 더 굴린다 : 총을 세워도 윗면이 보이지 않는다 */
     if(rollZ) it.view.quaternion.premultiply(
       new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), rollZ));
