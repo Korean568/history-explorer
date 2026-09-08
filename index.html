@@ -1501,6 +1501,7 @@ const Boars = {
   /* 쓰러진다. drop 이 true 면 그 자리에 가죽을 남긴다. */
   kill(i, drop){
     const b=this.list[i]; this.list.splice(i,1);
+    if(b.gate) S.gateDown = true;              // 문지기는 다시 나오지 않는다
     if(drop && !CAVE.on) dropHide(b.x, b.z);
     const g=b.g; let a=0, life=0;
     pickFx(b.x, 1.0, b.z, 0xffd76a);
@@ -3570,9 +3571,11 @@ function buildCave(){
     label:()=>'🚪 동굴에서 나가기',
     act(){ caveLeave(false); } });
 
-  /* 문을 지키는 커다란 멧돼지 */
-  const gk = Boars.spawnAt(0, -4);
-  if(gk){ gk.hp = 3000; gk.gate = true; gk.big = 1.9; gk.speed = 5.4; }
+  /* 문을 지키는 커다란 멧돼지 — 한 번 잡으면 다시 나오지 않는다 */
+  if(!S.gateDown){
+    const gk = Boars.spawnAt(0, -4);
+    if(gk){ gk.hp = 3000; gk.gate = true; gk.big = 1.9; gk.speed = 5.4; }
+  }
 
   /* 끝의 문 */
   caveDoor(0, -13);
@@ -3708,10 +3711,20 @@ function caveOpenDoor(){
 
   /* 먼저 말을 건다 */
   setTimeout(()=>{
-    Talk.say('💀 뼈다귀 샌즈',
-      '안녕? 나는 <b>뼈다귀 샌즈</b>야.<br>혹시 <b>내 멧돼지</b> 못 봤니?',
-      [ { t:'🤥 거짓말하기', cls:'lie',   fn:()=>caveBegin(true) },
-        { t:'😐 진실을 말하기', cls:'truth', fn:()=>caveBegin(false) } ]);
+    if(S.caveAnswer){
+      /* 다시 찾아왔다 — 묻지 않고 그때 한 대답대로 붙는다 */
+      const n = S.caveDeaths || 1;
+      Talk.say('💀 뼈다귀 샌즈',
+        '오! 또 만났네? 근데 그 얼굴… 뭔가 있는데..<br>'+
+        '아! 너 나한테 <b>' + n + '번</b> 죽었구나?<br>'+
+        '이번에도 결투를 위해 찾아 온 거야? 좋아. 받아주지.<br><b>자! 덤벼라!</b>',
+        [ { t:'▶ 다음', cls:'truth', fn:()=>caveBegin(S.caveAnswer === 'lie') } ]);
+    } else {
+      Talk.say('💀 뼈다귀 샌즈',
+        '안녕? 나는 <b>뼈다귀 샌즈</b>야.<br>혹시 <b>내 멧돼지</b> 못 봤니?',
+        [ { t:'🤥 거짓말하기', cls:'lie',   fn:()=>caveBegin(true) },
+          { t:'😐 진실을 말하기', cls:'truth', fn:()=>caveBegin(false) } ]);
+    }
   }, 900);
 }
 
@@ -3720,6 +3733,7 @@ function caveBegin(lied){
   const sans = bosses.find(b=>b.kind==='sans');
   if(!sans) return;
   CAVE.branch = lied ? 'lie' : 'truth';
+  if(!S.caveAnswer) S.caveAnswer = CAVE.branch;        // 처음 한 대답을 기억한다
   SURVIVE_SEC   = lied ? SURVIVE_LIE   : SURVIVE_TRUTH;
   sans.max      = lied ? SANS_HP_LIE   : SANS_HP_TRUTH;
   sans.hp       = sans.max;
@@ -6569,6 +6583,7 @@ function shoot(it, now){
 function gameOver(cause){
   if(dead) return;
   dead = true;
+  if(CAVE.on) S.caveDeaths = (S.caveDeaths || 0) + 1;   // 샌즈에게 진 횟수
   const starved = (cause === 'hunger'), lasered = (cause === 'laser'),
         spiked  = (cause === 'spike');
   const title = lasered ? '💀 레이저에 당했어요!'
