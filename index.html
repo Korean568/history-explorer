@@ -419,6 +419,19 @@
   #hungerWrap.low .bar i{background:linear-gradient(90deg,#e2953a,#d4423f);}
   #hungerWrap.empty{animation:dpul .9s infinite;}
 
+  /* ---------- 광학조준경 십자선 ---------- */
+  #reticle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:190px;height:190px;display:none;border-radius:50%;
+    border:2px solid rgba(20,20,20,.75);
+    box-shadow:0 0 0 2000px rgba(8,8,10,.55);}
+  #reticle i{position:absolute;background:#e0342c;}
+  #reticle .v{left:50%;top:8%;width:2px;height:34%;transform:translateX(-50%);}
+  #reticle .h{top:50%;left:8%;height:2px;width:34%;transform:translateY(-50%);}
+  #reticle .dot{left:50%;top:50%;width:6px;height:6px;border-radius:50%;
+    transform:translate(-50%,-50%);box-shadow:0 0 6px rgba(224,52,44,.9);}
+  #reticle .v:last-of-type{}
+  @media (max-width:620px){ #reticle{width:150px;height:150px;} }
+
   /* ---------- 말상자 ---------- */
   #talk{position:absolute;left:50%;bottom:calc(26px + env(safe-area-inset-bottom));
     transform:translateX(-50%);width:min(680px,92vw);display:none;pointer-events:auto;
@@ -641,6 +654,7 @@
     <div id="gdHint">Space · 클릭 — 점프</div>
   </div>
   <div id="crosshair"></div>
+  <div id="reticle"><i class="v"></i><i class="h"></i><i class="dot"></i></div>
   <div id="joy"><i></i></div>
   <button id="runBtn">🏃<span>달리기</span></button>
   <button id="atkBtn">⚔️<span>공격</span></button>
@@ -697,6 +711,7 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elBoss=$('#boss'), elBossName=$('#bossName'), elBossFill=$('#bossFill'), elBossSub=$('#bossSub'),
       elGd=$('#gd'), elGdCv=$('#gdCv'), elGdLeft=$('#gdLeft'), elGdName=$('#gdName'),
       elTalk=$('#talk'), elTalkName=$('#talkName'), elTalkMsg=$('#talkMsg'), elTalkBtns=$('#talkBtns'),
+      elReticle=$('#reticle'), elCross=$('#crosshair'),
       elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party'),
       elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn'),
       elAmmo=$('#ammo');
@@ -1954,6 +1969,27 @@ function akModel(){
   add(boxM(.052,.014,.230,GUN_WOOD2), 0,-.086,.330);
   add(boxM(.050,.096,.014,GUN_DARK),  0,-.056,.444);            // 개머리판 밑판
 
+  /* -- 광학조준경 (샌즈를 쓰러뜨려야 달린다) -- */
+  const scope = new THREE.Group();
+  const SC = 0x24272c, SC2 = 0x33373d;
+  [[-.135],[.020]].forEach(q=>{                       // 고정 고리 둘
+    const ring = boxM(.030,.062,.024, SC2);
+    ring.position.set(0,.104,q[0]); scope.add(ring);
+  });
+  const rail = boxM(.046,.016,.220, SC2); rail.position.set(0,.074,-.058); scope.add(rail);
+  const body = tubeM(.030,.300,SC,10);   body.position.set(0,.146,-.058); scope.add(body);
+  const bell = cylM(.042,.032,.070,10,SC); bell.rotation.x=Math.PI/2;
+  bell.position.set(0,.146,-.226); scope.add(bell);
+  const eye2 = cylM(.038,.032,.060,10,SC); eye2.rotation.x=Math.PI/2;
+  eye2.position.set(0,.146,.100); scope.add(eye2);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(.031,12),
+    new THREE.MeshBasicMaterial({color:0x2a4a63}));
+  lens.position.set(0,.146,.131); scope.add(lens);
+  const knob = cylM(.016,.016,.030,8,SC2); knob.rotation.z=Math.PI/2;
+  knob.position.set(.030,.146,-.058); scope.add(knob);
+  scope.visible = false; g.add(scope);
+  g.userData.scope = scope;
+
   /* -- 발사 섬광 (평소에는 숨어 있다) -- */
   const flash=new THREE.Group();
   const f1=new THREE.Mesh(new THREE.ConeGeometry(.055,.20,6),
@@ -2166,7 +2202,9 @@ const ITEMS = [
   { id:'ak', key:'4', ic:'🔫', nm:'AK-47', range:45, dmg:BOAR_HP, kill:true, gun:true, cd:180,
     have:()=> !!S.ak,
     pos:[.175,-.230,-.500], rot:[.02,-.045,.02],
-    aim:[0,-.0775,-.620],                       // 조준할 때 : 가늠자를 화면 한가운데로
+    aim:[0,-.0775,-.620],                       // 가늠자를 화면 한가운데로
+    aimScope:[0,-.1315,-.600],                  // 조준경을 달면 그 축을 한가운데로
+    zoom:24, zoomScope:36,
     /* 장전 자세 두 가지 :
        mag  — 탄창을 갈아 끼울 때 (총 아래쪽이 보이게 눕힌다)
        bolt — 노리쇠를 당길 때   (총 오른쪽이 보이게 돌린다) */
@@ -2236,7 +2274,9 @@ function updateHand(dt, t){
     const e = swingT>0 ? Math.sin((swingT/0.16)*Math.PI*0.5) : 0;
     const bob = (Math.sin(t*1.5)*.006 + bobLevel*Math.sin(stepPhase*TAU)*.014) * (1-aimK*.8);
     /* 조준하면 가늠자와 가늠쇠가 화면 한가운데에 오도록 총을 가운데로 든다 */
-    const A = it.aim, k = aimK;
+    const U0 = it.view.userData;
+    if(U0.scope) U0.scope.visible = !!S.akScope;   // 얻은 뒤에만 달려 있다
+    const A = (S.akScope && it.aimScope) ? it.aimScope : it.aim, k = aimK;
     const px = P[0]+(A[0]-P[0])*k, py = P[1]+(A[1]-P[1])*k, pz = P[2]+(A[2]-P[2])*k;
     const rx = R[0]+(0-R[0])*k,    ry = R[1]+(0-R[1])*k,    rz = R[2]+(0-R[2])*k;
     const U = it.view.userData;
@@ -3821,7 +3861,8 @@ function caveDefeated(sans){
 
 /* 상으로 RPG 를 주고 동굴을 나온다 */
 function caveReward(){
-  S.rpg = true; drawHotbar();
+  S.rpg = true; S.akScope = true; drawHotbar();
+  toast('🔭 AK-47 에 광학조준경이 달렸어요!');
   CAVE.phase = 'done';
   setTimeout(()=>caveLeave(true), 3400);
 }
@@ -7347,11 +7388,17 @@ function tick(){
   if(!(it0 && it0.gun)) aiming = false;
   const aimTarget = (aiming && !paused && !dead && reloadT<=0) ? 1 : 0;
   const nk = aimK + (aimTarget-aimK)*Math.min(1, dt*11);
+  const scoped = !!(it0 && it0.id === 'ak' && S.akScope);
   if(Math.abs(nk-aimK) > 0.0005){
     aimK = nk;
-    camera.fov = BASE_FOV - aimK*24;
+    const zoom = scoped ? (it0.zoomScope || 36) : (it0 && it0.zoom ? it0.zoom : 24);
+    camera.fov = BASE_FOV - aimK*zoom;
     camera.updateProjectionMatrix();
   }
+  /* 조준경을 들여다보는 동안에는 십자선을 보여 준다 */
+  const inScope = scoped && aimK > .55;
+  elReticle.style.display = inScope ? 'block' : 'none';
+  elCross.style.opacity   = inScope ? '0' : '';
   /* 연발 : 방아쇠를 당기고 있는 동안 계속 나간다 */
   if(firing){
     if(paused || dead || !(it0 && it0.gun)) firing = false;
