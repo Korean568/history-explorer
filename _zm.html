@@ -3866,57 +3866,11 @@ function caveFinish(sans){
   caveReward();
 }
 
-/* ---------- 세계가 바뀌어도 남는 효과 ---------- */
-let sceneFx = [];
-function fxBeam(ax,ay,az, bx,by,bz, col, life, rad){
-  const from = new THREE.Vector3(ax,ay,az), to = new THREE.Vector3(bx,by,bz);
-  const dir = to.clone().sub(from), len = dir.length();
-  if(len < .05) return;
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rad||.12, rad||.12, len, 7),
-    new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:1, fog:false}));
-  m.position.copy(from).addScaledVector(dir, .5);
-  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
-  m.userData.noHole = true; scene.add(m);
-  sceneFx.push({ m, t:life||.2, max:life||.2 });
-}
-function fxShield(x,y,z){
-  const m = new THREE.Mesh(new THREE.SphereGeometry(1.5, 12, 10),
-    new THREE.MeshBasicMaterial({color:0x9fe6ff, transparent:true, opacity:.55,
-                                 wireframe:true, fog:false}));
-  m.position.set(x,y,z); m.userData.noHole = true; scene.add(m);
-  sceneFx.push({ m, t:.45, max:.45 });
-}
-function updateSceneFx(dt){
-  for(let i=sceneFx.length-1;i>=0;i--){
-    const f = sceneFx[i];
-    f.t -= dt;
-    f.m.material.opacity = Math.max(0, (f.t/f.max) * (f.m.material.wireframe ? .55 : 1));
-    if(f.t <= 0){ scene.remove(f.m); sceneFx.splice(i,1); }
-  }
-}
-
-/* 부하 샌즈가 보스의 공격을 막고 되받아친다 */
-function allyClash(sans){
-  if(!ally) return;
-  /* ① 보스가 쏜다 → ② 부하가 막는다 */
-  fxBeam(sans.x, 2.0, sans.z, player.x, 1.4, player.z, 0xff6a6a, .20, .16);
-  fxShield(player.x, 1.3, player.z);
-  Snd.play('gunShot', .45);
-  toast('🛡️ 부하 샌즈가 막아 냈어요!');
-  /* ③ 반격 */
-  setTimeout(()=>{
-    if(!ally || !sans.alive) return;
-    fxBeam(ally.x, 1.5, ally.z, sans.x, 2.0, sans.z, 0x9fe6ff, .26, .14);
-    Snd.play('metalStir', .8);
-    bossHit(sans, 900);
-  }, 280);
-}
-
 /* ---------- 부하가 된 샌즈 ----------
    바깥 세계에서 따라다니다가, 멧돼지가 다가오면 대신 처리해 줍니다. */
 let ally = null;
 function updateAlly(dt, t){
-  if(!S.sansAlly || dead){
+  if(!S.sansAlly || CAVE.on || dead){
     if(ally){ scene.remove(ally.g); if(ally.beam) scene.remove(ally.beam); ally = null; }
     return;
   }
@@ -4043,11 +3997,7 @@ function caveUpdate(dt){
   /* 버티기 : 매머드와 멧돼지를 다 잡은 뒤 2분 동안 가시를 피해야 한다 */
   if(sans && sans.trial && !dead){
     if(!paused) sans.survive -= dt;
-    if(S.sansAlly){
-      /* 부하 샌즈가 곁에 있으면 판이 뜨지 않는다 — 대신 막고 되받아친다 */
-      gdT -= dt;
-      if(gdT <= 0){ gdT = 2.6 + Math.random()*1.4; allyClash(sans); }
-    } else if(!GD.on){
+    if(!GD.on){
       gdT -= dt;
       if(gdT <= 0){
         const lv = 1 - (sans.survive / SURVIVE_SEC);     // 시간이 갈수록 어려워진다
@@ -7170,10 +7120,7 @@ cv.addEventListener('pointercancel',dmEnd);
 /* 채팅 보내기 버튼 (태블릿) */
 document.getElementById('chatSend').addEventListener('click', e=>{
   e.preventDefault(); Snd.resume(); Chat.send();
-  elChatIn.blur();                       // 보내고 나면 바로 움직일 수 있게
 });
-/* 화면을 누르면 채팅칸에서 손을 뗀다 (글쓰기 때문에 못 움직이는 일이 없게) */
-cv.addEventListener('pointerdown', ()=>{ if(document.activeElement===elChatIn) elChatIn.blur(); });
 
 /* 🏃 달리기 버튼 : 누르고 있는 동안만 달린다 */
 const runBtn=document.getElementById('runBtn');
@@ -7275,6 +7222,7 @@ elAct.addEventListener('click',e=>{ e.preventDefault(); tryInteract(); });
    11. 루프
    ========================================================= */
 const clock=new THREE.Clock();
+window.__GIVE=function(){S.ak=true;drawHotbar();};window.__EQ=function(id){equipId=null;for(var i=0;i<ITEMS.length;i++){ITEMS[i].view.visible=false;handRest(ITEMS[i]);}equip(id);};window.__ENTER=function(){CAVE.back={x:40,z:-24};caveEnter();};window.__SET=function(x,z,y,pi){player.x=x;player.z=z;yaw=y;if(pi!==undefined)pitch=pi;};window.__AIM=function(v){aiming=v;};window.__ATK=function(){atkAt=-1e9;attack();};window.__GK=function(){var g=Boars.list.filter(function(b){return b.gate;})[0];return g?{hp:g.hp,x:+g.x.toFixed(1),z:+g.z.toFixed(1)}:null;};window.__B=function(){return Boars.list.map(function(b){return {hp:b.hp,x:Math.round(b.x),z:Math.round(b.z)};});};window.__LOS=function(ax,az,bx,bz){return losBlocked(ax,az,bx,bz);};window.__TICKB=function(dt){Boars.update(dt);};
 function tick(){
   requestAnimationFrame(tick);
   const dt=Math.min(clock.getDelta(),.05), t=clock.elapsedTime;
@@ -7360,7 +7308,6 @@ function tick(){
   updateReload(dt);
   updateHand(dt, t);
   GD.update(dt);
-  updateSceneFx(dt);
   updateAlly(dt, t);
   updateHp(dt);
   caveUpdate(dt);
