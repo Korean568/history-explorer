@@ -419,6 +419,22 @@
   #hungerWrap.low .bar i{background:linear-gradient(90deg,#e2953a,#d4423f);}
   #hungerWrap.empty{animation:dpul .9s infinite;}
 
+  /* ---------- 말상자 ---------- */
+  #talk{position:absolute;left:50%;bottom:calc(26px + env(safe-area-inset-bottom));
+    transform:translateX(-50%);width:min(680px,92vw);display:none;pointer-events:auto;
+    background:rgba(12,10,20,.94);border:4px solid #e9e6dc;border-radius:16px;
+    padding:14px 18px 16px;box-shadow:0 10px 30px rgba(0,0,0,.55);}
+  #talkName{font-size:13px;font-weight:800;color:#bff2ff;letter-spacing:.5px;margin-bottom:7px;}
+  #talkMsg{font-size:16px;font-weight:700;line-height:1.6;color:#f2efe6;word-break:keep-all;}
+  #talkBtns{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+  #talkBtns button{flex:1 1 150px;padding:11px 12px;font-family:inherit;font-size:14px;
+    font-weight:800;color:#1a1a22;background:#e9e6dc;border:none;border-bottom:4px solid #a9a498;
+    border-radius:11px;cursor:pointer;}
+  #talkBtns button:active{transform:translateY(2px);border-bottom-width:2px;}
+  #talkBtns button.lie{background:#f0b9b9;border-bottom-color:#a86a6a;}
+  #talkBtns button.truth{background:#b9e2f0;border-bottom-color:#6a94a8;}
+  @media (max-width:620px){ #talkMsg{font-size:13.5px;} #talkBtns button{font-size:12.5px;} }
+
   /* ---------- 샌즈의 2D 공격 판 ---------- */
   #gd{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     width:min(660px,92vw);display:none;pointer-events:auto;
@@ -614,6 +630,11 @@
     <div id="bossBar"><i id="bossFill"></i></div>
     <div id="bossSub">멧돼지 20마리 남음</div>
   </div>
+  <div id="talk">
+    <div id="talkName">💀 뼈다귀 샌즈</div>
+    <div id="talkMsg"></div>
+    <div id="talkBtns"></div>
+  </div>
   <div id="gd">
     <div id="gdTop"><span id="gdName">💀 피해라!</span><span id="gdLeft">6.0초</span></div>
     <canvas id="gdCv" width="640" height="200"></canvas>
@@ -675,6 +696,7 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elHp=$('#hpWrap'), elHpBar=$('#hpBar'), elHpTxt=$('#hpTxt'),
       elBoss=$('#boss'), elBossName=$('#bossName'), elBossFill=$('#bossFill'), elBossSub=$('#bossSub'),
       elGd=$('#gd'), elGdCv=$('#gdCv'), elGdLeft=$('#gdLeft'), elGdName=$('#gdName'),
+      elTalk=$('#talk'), elTalkName=$('#talkName'), elTalkMsg=$('#talkMsg'), elTalkBtns=$('#talkBtns'),
       elHotbar=$('#hotbar'), elEatKey=$('#eatKey'), elParty=$('#party'),
       elChat=$('#chat'), elChatLog=$('#chatLog'), elChatIn=$('#chatIn'),
       elAmmo=$('#ammo');
@@ -1567,7 +1589,7 @@ const Boars = {
     for(let i=this.list.length-1; i>=0; i--){
       const b = this.list[i];
       b.grow = Math.min(1, b.grow + dt*1.9);
-      b.g.scale.setScalar(b.grow);
+      b.g.scale.setScalar(b.grow * (b.big || 1));
       if(paused) continue;
 
       /* 손님 : 위치는 서버에서 오고, 화면만 부드럽게 따라간다 */
@@ -3174,10 +3196,12 @@ function supplyCrate(x,z,rotY,loot){
    세계를 새로 만들지 않고 통째로 바꿔 끼웠다가 되돌립니다.
    ========================================================= */
 let bosses = [];                     // 지금 살아 있는 큰 적들
-const CAVE = { on:false, phase:'walk', keep:null, saved:null, back:{x:40,z:-24} };
+const CAVE = { on:false, phase:'walk', keep:null, saved:null, branch:'lie', back:{x:40,z:-24} };
 let gdT = 6;                          // 다음 2D 공격까지 남은 시간
-const SURVIVE_SEC = 1200;             // 다 잡은 뒤 버텨야 하는 시간(초) — 20분
-const SANS_HP = 150000;               // AK 150 데미지로 딱 1,000발 (탄창 34개)
+/* 거짓말하면 어려워지고, 진실을 말하면 봐준다 */
+const SURVIVE_LIE   = 1200, SANS_HP_LIE   = 150000;   // 20분 / 15만
+const SURVIVE_TRUTH = 600,  SANS_HP_TRUTH = 15000;    // 10분 / 1만 5천
+let   SURVIVE_SEC = SURVIVE_LIE;      // 이번 싸움에서 버텨야 하는 시간
 const SANS_DMG_MUL = 1;               // 그대로 들어간다
 
 /* 15억을 '15억' 처럼 읽기 쉽게 */
@@ -3194,6 +3218,27 @@ function korNum(n){
    네모가 저절로 달리고, 가시가 다가온다. 점프로 넘으면 된다.
    판이 떠 있는 동안 바깥 세계는 잠시 멈춘다.
    --------------------------------------------------------- */
+/* ---------- 말상자 ---------- */
+const Talk = {
+  on:false,
+  say(name, msg, choices){
+    this.on = true;
+    elTalk.style.display = 'block';
+    elTalkName.textContent = name;
+    elTalkMsg.innerHTML = msg;
+    elTalkBtns.innerHTML = '';
+    paused = true; exitLock();
+    (choices || [{t:'계속', cls:'', fn:()=>this.hide()}]).forEach(c=>{
+      const b = document.createElement('button');
+      b.textContent = c.t; if(c.cls) b.className = c.cls;
+      b.addEventListener('click', e=>{ e.preventDefault(); Snd.resume();
+        Snd.play('pick', .6); this.hide(); c.fn(); });
+      elTalkBtns.appendChild(b);
+    });
+  },
+  hide(){ this.on = false; elTalk.style.display = 'none'; paused = false; }
+};
+
 const GD = {
   on:false, t:0, lv:0, life:6, spd:330, cube:{y:0, vy:0}, spikes:[], next:0, hits:0,
   GROUND:158, SIZE:26, X:96, G:2300, JUMP:-730, DMG:25,
@@ -3523,11 +3568,16 @@ function buildCave(){
     label:()=>'🚪 동굴에서 나가기',
     act(){ caveLeave(false); } });
 
+  /* 문을 지키는 커다란 멧돼지 */
+  const gk = Boars.spawnAt(0, -4);
+  if(gk){ gk.hp = 3000; gk.gate = true; gk.big = 1.9; gk.speed = 5.4; }
+
   /* 끝의 문 */
   caveDoor(0, -13);
   addStation(0, -10, { range:4.6, net:'solo',
-    label:()=> CAVE.phase==='walk' ? '🚪 문 열기' : '🚪 문',
-    ready:()=> CAVE.phase==='walk',
+    label:()=> CAVE.phase!=='walk' ? '🚪 문'
+             : (Boars.list.some(b=>b.gate) ? '🐗 문지기 멧돼지가 막고 있어요' : '🚪 문 열기'),
+    ready:()=> CAVE.phase==='walk' && !Boars.list.some(b=>b.gate),
     act(){ caveOpenDoor(); } });
 }
 
@@ -3602,6 +3652,7 @@ function caveLeave(won){
   scene.background = k.bg; scene.fog = k.fog;
   caveLamp.intensity = 0; bossMusic(false);
   if(GD.on) GD.finish();
+  if(Talk.on) Talk.hide();
   CAVE.on = false; CAVE.phase = 'walk'; CAVE.keep = null;
   player.x = CAVE.back.x; player.z = CAVE.back.z; yaw = 0;
   elBoss.style.display = 'none';
@@ -3619,13 +3670,14 @@ function caveReset(){
   CAVE.on = false; CAVE.phase = 'walk'; CAVE.keep = null; CAVE.saved = null;
   bosses = []; caveLamp.intensity = 0; bossMusic(false);
   if(GD.on) GD.finish();
+  if(Talk.on) Talk.hide();
   if(elBoss) elBoss.style.display = 'none';
 }
 
 /* ---------- 문을 열면 ---------- */
 function caveOpenDoor(){
   if(CAVE.phase !== 'walk') return;
-  CAVE.phase = 'fight';
+  CAVE.phase = 'talk';
   Snd.play('thud', 1.0); camShake = 1.4;
 
   /* 문을 활짝 연다 — 막고 있던 자리도 함께 치운다 */
@@ -3646,28 +3698,57 @@ function caveOpenDoor(){
     }
   }
 
-  /* 뼈다귀 아저씨 */
-  const sg = sansModel(); sg.position.set(0,0,-58); world.add(sg);
-  const sans = { kind:'sans', g:sg, x:0, z:-58, hp:SANS_HP, max:SANS_HP, r:1.5,
-                 alive:true, vuln:false, trial:false, survive:SURVIVE_SEC, blink:2.5 };
+  /* 뼈다귀 아저씨가 기다리고 있다 */
+  const sg = sansModel(); sg.position.set(0,0,-46); world.add(sg);
+  const sans = { kind:'sans', g:sg, x:0, z:-46, hp:SANS_HP_LIE, max:SANS_HP_LIE, r:1.5,
+                 alive:true, vuln:false, trial:false, survive:SURVIVE_LIE, blink:2.5 };
   bosses.push(sans);
 
-  /* 매머드 */
-  [[0,-46]].forEach(q=>{
-    const mg = mammothModel(); mg.position.set(q[0],0,q[1]); world.add(mg);
-    bosses.push({ kind:'mammoth', g:mg, x:q[0], z:q[1], hp:15000, max:15000, r:3.6,
-                  alive:true, vuln:true, hitCd:0 });
-  });
+  /* 먼저 말을 건다 */
+  setTimeout(()=>{
+    Talk.say('💀 뼈다귀 샌즈',
+      '안녕? 나는 <b>뼈다귀 샌즈</b>야.<br>혹시 <b>내 멧돼지</b> 못 봤니?',
+      [ { t:'🤥 거짓말하기', cls:'lie',   fn:()=>caveBegin(true) },
+        { t:'😐 진실을 말하기', cls:'truth', fn:()=>caveBegin(false) } ]);
+  }, 900);
+}
 
-  /* 멧돼지 20마리 */
-  for(let i=0;i<20;i++){
-    const a = i/20*TAU, rr2 = 14 + (i%3)*4;
-    Boars.spawnAt(Math.cos(a)*rr2, -40 + Math.sin(a)*rr2);
+/* 대답에 따라 싸움이 달라진다 */
+function caveBegin(lied){
+  const sans = bosses.find(b=>b.kind==='sans');
+  if(!sans) return;
+  CAVE.branch = lied ? 'lie' : 'truth';
+  SURVIVE_SEC   = lied ? SURVIVE_LIE   : SURVIVE_TRUTH;
+  sans.max      = lied ? SANS_HP_LIE   : SANS_HP_TRUTH;
+  sans.hp       = sans.max;
+  sans.survive  = SURVIVE_SEC;
+
+  if(lied){
+    /* 매머드 한 마리 + 멧돼지 20마리 */
+    const mg = mammothModel(); mg.position.set(0,0,-46); world.add(mg);
+    bosses.push({ kind:'mammoth', g:mg, x:0, z:-46, hp:15000, max:15000, r:3.6,
+                  alive:true, vuln:true, hitCd:0 });
+    for(let i=0;i<20;i++){
+      const a = i/20*TAU, rr2 = 14 + (i%3)*4;
+      Boars.spawnAt(Math.cos(a)*rr2, -40 + Math.sin(a)*rr2);
+    }
+    centerMsg('<h2>💀 !</h2>'+
+      '<p>"수상한데… 거짓말이지?<br>내 멧돼지를 죽인 대가를 치뤄주겠다!"</p>'+
+      '<p style="opacity:.85">매머드 한 마리와 멧돼지 스무 마리가 나타났다!</p>', 4600);
+  } else {
+    /* 멧돼지 30마리 (매머드는 없다) */
+    for(let i=0;i<30;i++){
+      const a = i/30*TAU, rr2 = 12 + (i%4)*4;
+      Boars.spawnAt(Math.cos(a)*rr2, -40 + Math.sin(a)*rr2);
+    }
+    centerMsg('<h2>💀 …</h2>'+
+      '<p>"그렇군. 하지만 내 멧돼지를 죽인 대가는 치뤄야지.<br>덤벼라!"</p>'+
+      '<p style="opacity:.85">멧돼지 서른 마리가 나타났다!</p>', 4600);
   }
+  CAVE.boarTotal = lied ? 20 : 30;
+  CAVE.phase = 'fight';
   bossMusic(true);
-  centerMsg('<h2>💀 ？？？</h2><p>"어이. 여기서부턴 못 지나가."</p>'+
-            '<p style="opacity:.85">매머드 한 마리와 멧돼지 스무 마리가 나타났다!</p>', 4200);
-  toast('💀 화면에 판이 뜨면 Space 로 가시를 넘으세요!');
+  toast(lied ? '💀 거짓말을 들켰어요!' : '💀 정직하게 말했어요');
 }
 
 /* ---------- 큰 적이 맞았을 때 ---------- */
@@ -3810,7 +3891,7 @@ function caveUpdate(dt){
     sans.g.userData.lt.intensity = 2.2;
     Snd.play('nightFall', .9);
     centerMsg('<h2>💀 !</h2><p>"…진심으로 하는 거구나."</p>'+
-              '<p style="opacity:.85"><b>20분</b> 안에 끝내 봐.<br>'+
+              '<p style="opacity:.85"><b>' + Math.round(SURVIVE_SEC/60) + '분</b> 안에 끝내 봐.<br>'+
               '판이 안 뜰 때 쏘고, 판이 뜨면 <b>Space</b> 로 가시를 넘으세요!</p>', 5200);
   }
 
@@ -3836,6 +3917,12 @@ function caveUpdate(dt){
       elBossFill.style.width = (hp/mx*100) + '%';
       elBossSub.textContent = Math.round(hp).toLocaleString() + ' / ' + mx.toLocaleString() +
         '   ·   🐗 멧돼지 ' + left + '마리 남음';
+    } else {
+      /* 매머드가 없는 갈래 : 남은 멧돼지 수가 막대가 된다 */
+      const tot = CAVE.boarTotal || Math.max(1, left);
+      elBossName.textContent = '🐗 멧돼지';
+      elBossFill.style.width = (Math.min(left, tot)/tot*100) + '%';
+      elBossSub.textContent = left + ' / ' + tot + '마리 남음';
     }
   } else elBoss.style.display = 'none';
 }
@@ -6514,7 +6601,7 @@ function gameOver(cause){
           ❤️ 판 사이사이에 <b>8초 동안 안 맞으면</b> 체력이 조금씩 회복됩니다.</p>
       </div>` : lasered ? (laserWhy === 'spike'
       ? '<p><b>가시에 찔렸더니 샌즈가 비웃으면서 레이저로 죽였어요!</b></p>'
-      : '<p>20분 안에 끝내지 못하자 <b>레이저</b>가 날아왔어요.</p>') + `
+      : '<p>제한 시간 안에 끝내지 못하자 <b>레이저</b>가 날아왔어요.</p>') + `
       <div style="background:#fff;border:3px solid #e3d5bb;border-radius:16px;padding:12px;margin:14px 0">
         <p style="margin:0;font-size:14px;line-height:1.7">
           💡 판이 안 뜨는 동안 <b>쉬지 말고 쏘세요.</b><br>
