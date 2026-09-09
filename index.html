@@ -419,6 +419,13 @@
   #hungerWrap.low .bar i{background:linear-gradient(90deg,#e2953a,#d4423f);}
   #hungerWrap.empty{animation:dpul .9s infinite;}
 
+  /* ---------- 시크에게 붙잡혔을 때 나오는 영상 ---------- */
+  #deathVid{position:fixed;inset:0;background:#000;z-index:9999;display:none;
+    align-items:center;justify-content:center;cursor:pointer;}
+  #deathVid video{max-width:100%;max-height:100%;}
+  #deathVid .skip{position:absolute;right:14px;bottom:12px;color:#fff9;
+    font-size:12px;font-weight:700;letter-spacing:.02em;}
+
   /* ---------- 광학조준경 십자선 ---------- */
   #reticle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     width:190px;height:190px;display:none;border-radius:50%;
@@ -652,6 +659,8 @@
   </div>
   <div id="crosshair"></div>
   <div id="reticle"><i class="dot"></i></div>
+  <div id="deathVid"><video id="deathVidEl" playsinline preload="none"></video>
+    <span class="skip">화면을 누르면 넘어갑니다</span></div>
   <div id="joy"><i></i></div>
   <button id="runBtn">🏃<span>달리기</span></button>
   <button id="atkBtn">⚔️<span>공격</span></button>
@@ -3952,6 +3961,48 @@ function sansModel(){
   return g;
 }
 
+/* ---------- 👁️ 시크 ----------
+   img/boss.png 그림을 세워 놓습니다. 파일이 없으면 임시 그림자로 대신합니다. */
+function seekModel(){
+  const g = new THREE.Group();
+  const W = 256, H = 384;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#0b0b0d';
+  c.beginPath(); c.ellipse(W*.50, H*.16, W*.19, H*.12, 0, 0, TAU); c.fill();
+  c.fillRect(W*.31, H*.24, W*.38, H*.40);
+  c.fillRect(W*.35, H*.62, W*.11, H*.34);
+  c.fillRect(W*.54, H*.62, W*.11, H*.34);
+  c.fillRect(W*.17, H*.28, W*.12, H*.34);
+  c.fillRect(W*.71, H*.28, W*.12, H*.34);
+  c.fillStyle = '#f2ece2';
+  c.beginPath(); c.ellipse(W*.50, H*.17, W*.10, H*.052, 0, 0, TAU); c.fill();
+  c.fillStyle = '#0b0b0d';
+  c.beginPath(); c.ellipse(W*.50, H*.17, W*.042, H*.038, 0, 0, TAU); c.fill();
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:.30,
+                                            side:THREE.DoubleSide, fog:false });
+  const pl = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 4.05), mat);
+  pl.position.y = 2.02; g.add(pl);
+  try{
+    new THREE.TextureLoader().load('img/boss.png', (t)=>{ mat.map = t; mat.needsUpdate = true; },
+      undefined, ()=>{});
+  }catch(e){}
+  const lt = new THREE.PointLight(0xff3b2f, 0, 16, 2); lt.position.set(0,2.1,.5); g.add(lt);
+  g.userData.noHole = true; g.userData.lt = lt; g.userData.flat = true;
+  return g;
+}
+
+/* 돌진할 자리에 남는 붉은 자국 */
+function seekMark(x,z){
+  const m = new THREE.Mesh(new THREE.RingGeometry(1.1,1.8,20),
+    new THREE.MeshBasicMaterial({color:0xff3b2f, transparent:true, opacity:.9,
+                                 side:THREE.DoubleSide, fog:false}));
+  m.rotation.x = -Math.PI/2; m.position.set(x, .09, z);
+  m.userData.noHole = true; scene.add(m);
+  sceneFx.push({ m, t:.9, max:.9 });
+}
+
 function caveDoor(x,z){
   const g = new THREE.Group();
   const WOOD1 = 0x6b4a2a, WOOD2 = 0x7d5833, WOOD3 = 0x5a3d22, IRON = 0x3a3a3e;
@@ -4087,10 +4138,30 @@ function bossMusic(on){
   try{
     if(on){
       if(!sndOn) return;
-      if(!bossAudio){ bossAudio = new Audio('sounds/boss.mp3'); bossAudio.loop = true; bossAudio.volume = .45; }
+      if(!bossAudio){ bossAudio = new Audio('sounds/boss.mp3'); bossAudio.loop = true; }
+      bossAudio.volume = .1125;              // 예전(.45)보다 75% 줄였습니다
       bossAudio.currentTime = 0;
       const pr = bossAudio.play(); if(pr && pr.catch) pr.catch(()=>{});
     } else if(bossAudio){ bossAudio.pause(); bossAudio.currentTime = 0; }
+  }catch(e){}
+}
+
+/* 시크의 싸움 음악 : seek.mp3 와 bossseek.mp3 가 함께 흐릅니다 */
+let seekAudio = [];
+function seekMusic(on){
+  try{
+    if(on){
+      if(!sndOn) return;
+      if(!seekAudio.length){
+        seekAudio = ['sounds/seek.mp3', 'sounds/bossseek.mp3'].map(u=>{
+          const a = new Audio(u); a.loop = true; a.volume = .45; return a;
+        });
+      }
+      for(const a of seekAudio){
+        a.currentTime = 0;
+        const pr = a.play(); if(pr && pr.catch) pr.catch(()=>{});
+      }
+    } else for(const a of seekAudio){ a.pause(); a.currentTime = 0; }
   }catch(e){}
 }
 
@@ -4139,6 +4210,10 @@ function caveEnter(){
 
 function caveLeave(won){
   if(!CAVE.on) return;
+  /* 시크와 싸우다 나가면, 다시 들어왔을 때 문 앞에서 시작한다 */
+  if(seek){ world.remove(seek.g); seek = null; }
+  if(CAVE.phase === 'seek') CAVE.phase = 'seekwait';
+  seekMusic(false);
   const k = CAVE.keep;
   /* 싸움이 안 끝났으면 동굴을 그대로 기억해 둔다 */
   CAVE.saved = won ? null : { world, colliders, interactables, animated, firePits,
@@ -4168,7 +4243,9 @@ function caveReset(){
     if(c && c.world) c.world.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
   });
   CAVE.on = false; CAVE.phase = 'walk'; CAVE.keep = null; CAVE.saved = null;
-  bosses = []; caveLamp.intensity = 0; bossMusic(false);
+  bosses = []; caveLamp.intensity = 0; bossMusic(false); seekMusic(false);
+  if(seek){ seek = null; }
+  CAVE.seekDoorG = null;
   if(GD.on) GD.finish();
   if(Talk.on) Talk.hide();
   if(elBoss) elBoss.style.display = 'none';
@@ -4325,8 +4402,8 @@ function caveReward(){
   setTimeout(()=>{
     toast(`🦴 샌즈의 뼈다귀 ${BONE_REWARD}개를 주웠어요 — 늑대에게 내밀면 길들일 수 있어요`);
   }, 1400);
-  CAVE.phase = 'done';
-  setTimeout(()=>caveLeave(true), 3400);
+  /* 샌즈가 있던 자리 뒤쪽에 문이 하나 더 생긴다 */
+  setTimeout(seekDoorAppear, 2600);
 }
 
 /* 부하로 삼기 */
@@ -4368,6 +4445,225 @@ function caveFinish(sans){
   centerMsg('<h2>💀 …</h2><p>"…봐준 거야."</p>'+
             '<p style="opacity:.85">그가 남긴 <b>RPG</b> 를 주웠다.</p>', 3200);
   caveReward();
+}
+
+/* =========================================================
+   👁️ 시크 — 2.5초 노려본 뒤, 그때 서 있던 자리로 곧장 돌진합니다.
+              2분을 버티면 이기고, 시크가 부하가 됩니다.
+   ========================================================= */
+const SEEK_SURVIVE = 120;        // 버텨야 하는 시간(초)
+const SEEK_WAIT    = 2.5;        // 노려보는 시간(초)
+const SEEK_SPEED   = 24;         // 돌진하는 빠르기
+const SEEK_DMG     = 50;         // 붙잡히면 줄어드는 체력
+const SEEK_BOSS_DMG = 5000;      // 부하가 된 시크가 샌즈·매머드를 덮칠 때
+let seek = null;
+
+/* 뒤쪽 벽에 문이 나타난다 */
+function seekDoorAppear(){
+  if(!CAVE.on) return;
+  const prev = CAVE.doorG;
+  CAVE.seekDoorG = caveDoor(0, -66);
+  CAVE.doorG = prev;                       // 앞문 기억은 그대로 둔다
+  addStation(0, -61, { range:5.2, net:'solo',
+    label:()=> CAVE.phase === 'seekwait' ? '🚪 문 열기' : '🚪 문',
+    ready:()=> CAVE.phase === 'seekwait',
+    act(){ seekBegin(); } });
+  CAVE.phase = 'seekwait';
+  Snd.play('thud', 1.0); camShake = 1.6;
+  centerMsg('<h2>🚪 …</h2>'+
+            '<p>샌즈가 있던 자리 <b>뒤쪽 벽</b>에 문이 하나 더 생겼다.</p>'+
+            '<p style="opacity:.85">열어 볼까? (나가려면 통로 끝의 <b>나가는 곳</b>으로)</p>', 5000);
+}
+
+/* 문을 열면 시크가 나온다 */
+function seekBegin(){
+  if(CAVE.phase !== 'seekwait') return;
+  CAVE.phase = 'seek';
+  bossMusic(false);
+  /* 문을 활짝 연다 */
+  const dg = CAVE.seekDoorG;
+  if(dg){
+    const i = colliders.indexOf(dg.userData.col);
+    if(i >= 0) colliders.splice(i, 1);
+    const leaf = dg.userData.leaf;
+    if(leaf){
+      let a = 0;
+      const swing = (t, dt)=>{ a = Math.min(1, a + dt*1.4);
+        leaf.rotation.y = -a*1.95; if(a >= 1) removeAnim(swing); };
+      animated.push(swing);
+    }
+  }
+  Snd.play('stoneMove', .9); Snd.play('nightFall', 1.0);
+  const g = seekModel(); g.position.set(0, 0, -62); world.add(g);
+  seek = { g, x:0, z:-62, state:'wait', t:SEEK_WAIT, tx:0, tz:0,
+           hitCd:0, left:SEEK_SURVIVE, dash:0 };
+  camShake = 1.8;
+  seekMusic(true);
+  centerMsg('<h2>👁️ 시크</h2>'+
+            '<p><b>2분</b> 동안 버티면 이깁니다.</p>'+
+            '<p style="opacity:.85">시크는 <b>2.5초</b> 노려본 뒤,<br>'+
+            '그때 당신이 서 있던 <b>그 자리</b>로 곧장 돌진합니다.<br>'+
+            '가만히 있지 말고 <b>옆으로 피하세요!</b></p>', 6000);
+}
+
+function seekUpdate(dt){
+  if(!seek) return;
+  const g = seek.g;
+  g.rotation.y = Math.atan2(player.x-seek.x, player.z-seek.z);
+  if(paused || dead){ g.position.set(seek.x, 0, seek.z); return; }
+
+  seek.left -= dt;
+  if(seek.left <= 0){ seekWin(); return; }
+
+  /* 붙잡혔다 */
+  seek.hitCd = Math.max(0, seek.hitCd - dt);
+  const d = Math.hypot(player.x-seek.x, player.z-seek.z);
+  if(d < 1.9 && seek.hitCd <= 0){
+    seek.hitCd = 1.2;
+    camShake = 1.5;
+    hurt(SEEK_DMG, false, 'seek');
+    if(dead) return;
+  }
+
+  let bob = 0;
+  if(seek.state === 'wait'){
+    seek.t -= dt;
+    const k = 1 - Math.max(0, seek.t)/SEEK_WAIT;      // 0 → 1 로 차오른다
+    if(g.userData.lt) g.userData.lt.intensity = 3.2*k;
+    bob = Math.sin(clock.elapsedTime*14)*.06*k;       // 점점 떨린다
+    if(seek.t <= 0){
+      /* 바로 지금 서 있는 자리를 노린다 */
+      seek.tx = player.x; seek.tz = player.z;
+      seek.state = 'dash'; seek.dash = 3.2;
+      seekMark(seek.tx, seek.tz);
+      Snd.play('boarCharge', 1.0);
+      camShake = Math.max(camShake, 1.0);
+    }
+  } else {
+    seek.dash -= dt;
+    const dx = seek.tx-seek.x, dz = seek.tz-seek.z, dd = Math.hypot(dx, dz);
+    if(dd > .7 && seek.dash > 0){
+      seek.x += dx/dd*SEEK_SPEED*dt;
+      seek.z += dz/dd*SEEK_SPEED*dt;
+      /* 보스방 밖으로는 나가지 않는다 */
+      const rr4 = Math.hypot(seek.x, seek.z+40);
+      if(rr4 > 26){ seek.x *= 26/rr4; seek.z = -40 + (seek.z+40)*26/rr4; }
+    } else {
+      seek.state = 'wait'; seek.t = SEEK_WAIT;
+      if(g.userData.lt) g.userData.lt.intensity = 0;
+      Snd.play('thud', .8); camShake = Math.max(camShake, .6);
+    }
+  }
+  g.position.set(seek.x, bob, seek.z);
+}
+
+/* 2분을 버텼다 */
+function seekWin(){
+  seekMusic(false);
+  if(seek){ world.remove(seek.g); pickFx(seek.x, 2.0, seek.z, 0xff3b2f); }
+  seek = null;
+  S.seekAlly = true;
+  CAVE.phase = 'done';
+  Snd.play('levelUp', 1.0);
+  centerMsg('<h2>👁️ 버텨 냈다!</h2>'+
+            '<p>시크가 걸음을 멈추고 당신을 바라본다.</p>'+
+            '<p style="opacity:.85">이제 <b>위험한 짐승이 나타나면</b><br>'+
+            '시크가 대신 돌진해 줍니다.</p>', 4800);
+  setTimeout(()=>caveLeave(true), 5000);
+}
+
+/* ---------- 부하가 된 시크 (바깥 세계) ---------- */
+let seekPal = null;
+function updateSeekAlly(dt, t){
+  if(!S.seekAlly || dead){
+    if(seekPal){ scene.remove(seekPal.g); seekPal = null; }
+    return;
+  }
+  if(!seekPal){
+    const g = seekModel(); g.scale.setScalar(.8); scene.add(g);
+    seekPal = { g, x:player.x, z:player.z, state:'follow', tx:0, tz:0, cd:0 };
+  }
+  const s2 = seekPal;
+  if(!paused){
+    s2.cd = Math.max(0, s2.cd - dt);
+    if(s2.state === 'dash'){
+      const dx = s2.tx-s2.x, dz = s2.tz-s2.z, dd = Math.hypot(dx, dz);
+      if(dd > .8){ s2.x += dx/dd*SEEK_SPEED*dt; s2.z += dz/dd*SEEK_SPEED*dt; }
+      else {
+        /* 덮친다 */
+        for(let i=Boars.list.length-1;i>=0;i--)
+          if(Math.hypot(Boars.list[i].x-s2.x, Boars.list[i].z-s2.z) < 3.4)
+            Boars.damage(i, 400);
+        for(let i=Animals.list.length-1;i>=0;i--){
+          const a = Animals.list[i];
+          if(a.tame || a.kind !== 'wolf') continue;
+          if(Math.hypot(a.x-s2.x, a.z-s2.z) < 3.4) Animals.damage(i, 400);
+        }
+        /* 뼈다귀 아저씨와 매머드도 시크의 돌진에는 못 버틴다 */
+        for(const bs of bosses){
+          if(!bs.alive || !bs.vuln) continue;
+          if(Math.hypot(bs.x-s2.x, bs.z-s2.z) < 4.2 + (bs.r||1))
+            bossHit(bs, SEEK_BOSS_DMG);
+        }
+        Snd.play('thud', .7); camShake = Math.max(camShake, .5);
+        s2.state = 'follow'; s2.cd = 2.4;
+      }
+    } else {
+      /* 사람을 노리는 짐승을 찾는다 */
+      let bx = null, bz = null, bd = 22;
+      for(const b of Boars.list){
+        const d = Math.hypot(b.x-player.x, b.z-player.z);
+        if(d < bd){ bd = d; bx = b.x; bz = b.z; }
+      }
+      for(const a of Animals.list){
+        if(a.kind !== 'wolf' || !a.angry || a.tame) continue;
+        const d = Math.hypot(a.x-player.x, a.z-player.z);
+        if(d < bd){ bd = d; bx = a.x; bz = a.z; }
+      }
+      for(const bs of bosses){                    // 샌즈 · 매머드
+        if(!bs.alive || !bs.vuln) continue;
+        const d = Math.hypot(bs.x-player.x, bs.z-player.z);
+        if(d < bd){ bd = d; bx = bs.x; bz = bs.z; }
+      }
+      if(bx != null && s2.cd <= 0){
+        s2.tx = bx; s2.tz = bz; s2.state = 'dash';
+        seekMark(bx, bz); Snd.play('boarCharge', .65);
+      } else {
+        const sN = Math.sin(yaw), cN = Math.cos(yaw);
+        const tx = player.x + sN*3.6, tz = player.z + cN*3.6;   // 등 뒤에 선다
+        const k = Math.min(1, dt*3.0);
+        s2.x += (tx-s2.x)*k; s2.z += (tz-s2.z)*k;
+      }
+    }
+  }
+  s2.g.position.set(s2.x, Math.sin(t*1.5)*.07, s2.z);
+  const lx = (s2.state === 'dash') ? s2.tx : player.x;
+  const lz = (s2.state === 'dash') ? s2.tz : player.z;
+  s2.g.rotation.y = Math.atan2(lx-s2.x, lz-s2.z);
+  if(s2.g.userData.lt) s2.g.userData.lt.intensity = (s2.state === 'dash') ? 2.4 : .5;
+}
+
+/* 시크에게 붙잡혔을 때 나오는 영상 */
+function seekVideo(){
+  try{
+    const wrap = document.getElementById('deathVid');
+    const v = document.getElementById('deathVidEl');
+    if(!wrap || !v) return;
+    seekMusic(false); bossMusic(false);
+    if(!v.getAttribute('src')) v.setAttribute('src', 'img/bosswin.mp4');
+    wrap.style.display = 'flex';
+    let done = false;
+    const close = ()=>{ if(done) return; done = true;
+      try{ v.pause(); }catch(e){}
+      wrap.style.display = 'none'; };
+    /* 영상이 1초쯤으로 짧아서, 끝난 뒤 마지막 장면을 잠깐 더 보여 줍니다 */
+    v.onended = ()=> setTimeout(close, 1600);
+    v.onerror = close;
+    wrap.onclick = close;                       // 눌러서 넘어가기
+    setTimeout(close, 20000);                   // 혹시 멈추면 20초 뒤에는 닫는다
+    try{ v.currentTime = 0; }catch(e){}
+    const pr = v.play(); if(pr && pr.catch) pr.catch(close);
+  }catch(e){}
 }
 
 /* ---------- 세계가 바뀌어도 남는 효과 ---------- */
@@ -4528,6 +4824,7 @@ function caveLaser(sans, why){
 
 function caveUpdate(dt){
   if(!CAVE.on){ elBoss.style.display = 'none'; return; }
+  if(CAVE.phase === 'seek'){ seekUpdate(dt); }
   const mams = bosses.filter(b=>b.kind==='mammoth');
   const live = mams.filter(b=>b.alive);
   const sans = bosses.find(b=>b.kind==='sans');
@@ -4594,7 +4891,16 @@ function caveUpdate(dt){
   }
 
   /* 체력 막대 */
-  if(CAVE.phase === 'fight'){
+  if(CAVE.phase === 'seek' && seek){
+    elBoss.style.display = 'block';
+    const l2 = Math.max(0, seek.left);
+    const mm2 = Math.floor(l2/60), ss2 = Math.floor(l2%60);
+    elBossName.textContent = '👁️ 시크   ⏳ ' + mm2 + ':' + String(ss2).padStart(2,'0');
+    elBossFill.style.width = (l2/SEEK_SURVIVE*100) + '%';
+    elBossSub.textContent = (seek.state === 'dash')
+      ? '💨 돌진 중! 옆으로 피하세요'
+      : '👁️ 노려보는 중… ' + Math.max(0, seek.t).toFixed(1) + '초';
+  } else if(CAVE.phase === 'fight'){
     elBoss.style.display = 'block';
     if(sans && sans.vuln && !sans.trial){
       elBossName.textContent = '💀 Sans';
@@ -7356,7 +7662,9 @@ function gameOver(cause){
   const title = lasered ? '💀 레이저에 당했어요!'
               : spiked  ? '🔺 가시에 찔렸어요!'
               : starved ? '🍖 배고파서 쓰러졌어요!'
-              : (cause === 'wolf') ? '🐺 늑대에게 물렸어요!' : '🐗 멧돼지에게 잡혔어요!';
+              : (cause === 'wolf') ? '🐺 늑대에게 물렸어요!'
+              : (cause === 'seek') ? '👁️ 시크에게 붙잡혔어요!' : '🐗 멧돼지에게 잡혔어요!';
+  if(cause === 'seek') seekVideo();
   Snd.play(starved ? 'claySoft' : 'boarHit'); Snd.fadeOut(0.9);
   camShake = 2.0;
   paused = true; exitLock(); hideCenter();
@@ -7801,7 +8109,9 @@ sndBtn.addEventListener('click',()=>{
   sndOn=!sndOn;
   sndBtn.textContent = sndOn?'🔊':'🔇';
   Snd.mute(!sndOn);
-  if(!sndOn) bossMusic(false); else if(CAVE.on && CAVE.phase==='fight') bossMusic(true);
+  if(!sndOn){ bossMusic(false); seekMusic(false); }
+  else if(CAVE.on && CAVE.phase==='fight') bossMusic(true);
+  else if(CAVE.on && CAVE.phase==='seek')  seekMusic(true);
 });
 
 /* 상호작용 버튼 */
@@ -7958,6 +8268,7 @@ function tick(){
   GD.update(dt);
   updateSceneFx(dt);
   updateAlly(dt, t);
+  updateSeekAlly(dt, t);
   updateHp(dt);
   caveUpdate(dt);
   updateHunger(dt);
