@@ -2184,6 +2184,54 @@ const Animals = {
 };
 
 /* =========================================================
+   🎤 마이크 — 아크리액터 상자를 열 때 권한을 물어봅니다.
+      지금은 소리 크기를 읽을 수 있게 준비만 해 둡니다.
+   ========================================================= */
+const Mic = {
+  ok:false, asked:false, stream:null, ctx:null, ana:null, buf:null,
+
+  ask(){
+    if(this.asked) return;
+    this.asked = true;
+    try{
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        toast('🎤 이 브라우저에서는 마이크를 쓸 수 없어요'); return;
+      }
+      navigator.mediaDevices.getUserMedia({ audio:true })
+        .then(st=>{
+          this.stream = st; this.ok = true;
+          try{
+            const AC = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AC();
+            const src = this.ctx.createMediaStreamSource(st);
+            this.ana = this.ctx.createAnalyser();
+            this.ana.fftSize = 512;
+            this.buf = new Uint8Array(this.ana.fftSize);
+            src.connect(this.ana);              // 스피커로는 내보내지 않는다
+          }catch(e){}
+          toast('🎤 마이크가 켜졌어요');
+        })
+        .catch(()=>{ toast('🎤 마이크를 쓰지 않기로 했어요'); });
+    }catch(e){}
+  },
+
+  /* 지금 들리는 소리의 크기 (0 ~ 1). 마이크가 없으면 0 */
+  level(){
+    if(!this.ana) return 0;
+    this.ana.getByteTimeDomainData(this.buf);
+    let sum = 0;
+    for(let i=0;i<this.buf.length;i++){ const v = (this.buf[i]-128)/128; sum += v*v; }
+    return Math.min(1, Math.sqrt(sum/this.buf.length) * 4);
+  },
+
+  stop(){
+    try{ if(this.stream) this.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+    try{ if(this.ctx) this.ctx.close(); }catch(e){}
+    this.stream = null; this.ctx = null; this.ana = null; this.ok = false;
+  }
+};
+
+/* =========================================================
    1-C-3. 내 몸 (3인칭) 과 🦾 슈트
      C 키를 누르면 카메라가 몸에서 떨어져 뒤에서 따라옵니다.
      아크리액터를 들고 누르면 갑주가 하나씩 날아와 붙습니다.
@@ -3907,6 +3955,7 @@ function supplyCrate(x,z,rotY,loot){
       openIt(); removeIt(it);
       if(arc){
         S.arc = true; drawHotbar();
+        Mic.ask();                       // 🎤 마이크 권한을 물어본다
         Snd.play('metalStir', 1.0);
         setTimeout(()=>Snd.play('levelUp', .9), 200);
         centerMsg('<h2>🔵 ？？？</h2>'+
