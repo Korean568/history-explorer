@@ -1263,6 +1263,9 @@ const DAY_SEC   = 90;                // 낮 1분 30초
 const NIGHT_SEC  = 90;               // 밤 1분 30초
 /* ---------- 체력 ---------- */
 const PLAYER_HP   = 100;         // 사람의 체력
+const SUIT_HP     = 5000;        // 🦾 슈트를 입었을 때의 체력
+/* 지금의 최대 체력 — 슈트를 입으면 커진다 */
+const maxHp = ()=> (S && S.suit) ? SUIT_HP : PLAYER_HP;
 const BOAR_HP     = 150;         // 멧돼지의 체력
 const BOAR_DMG    = 34;          // 멧돼지에게 한 번 받히면 줄어드는 체력 (세 번이면 쓰러진다)
 const BOAR_HIT_CD = 1.2;         // 멧돼지가 다시 받기까지 걸리는 시간(초)
@@ -2326,6 +2329,8 @@ function updateBody(dt, t){
 function toggleSuit(){
   if(paused || dead) return;
   S.suit = !S.suit;
+  /* 입으면 체력이 5000 으로 가득 차고, 벗으면 사람의 몸으로 돌아온다 */
+  hpSet(S.suit ? SUIT_HP : Math.min(PLAYER_HP, Math.max(1, (S.hp/SUIT_HP)*PLAYER_HP)));
   suitT = SUIT_ANIM;
   camShake = Math.max(camShake, S.suit ? 1.0 : .4);
   /* 철컥 — 부위가 하나씩 붙는 소리 */
@@ -2336,7 +2341,7 @@ function toggleSuit(){
   toast(S.suit ? '🦾 슈트를 장착했어요!' : '🦾 슈트를 벗었어요');
   if(S.suit){
     Buddy.cheer();
-    Guide.cheer('🦾 <b>슈트 장착!</b> 더 빠르게 달리고, 다치는 것도 크게 줄어듭니다.<br>'+
+    Guide.cheer('🦾 <b>슈트 장착!</b> 체력이 <b>5,000</b> 이 되고, 더 빠르게 달립니다.<br>'+
                 '<b>C</b> 키를 누르면 3인칭으로 슈트를 볼 수 있어요.', 4.4);
   }
   updateAtkBtn();
@@ -5392,12 +5397,12 @@ function eat(){
   if(meat > 0){
     /* 고기는 배도 더 차고 몸도 더 낫는다 */
     S.c.meat--; S.hunger = Math.min(100, S.hunger + MEAT_FILL); refresh();
-    if(S.hp != null && S.hp < PLAYER_HP) hpSet(S.hp + MEAT_HEAL);
+    if(S.hp != null && S.hp < maxHp()) hpSet(S.hp + MEAT_HEAL);
     Snd.play('meatEat'); Buddy.cheer(); hungerWarn = 8;
     toast(`🍗 고기를 구워 먹었어요 (남은 고기 ${S.c.meat}개)`);
   } else {
     S.c.food--; S.hunger = Math.min(100, S.hunger + 40); refresh();
-    if(S.hp != null && S.hp < PLAYER_HP) hpSet(S.hp + EAT_HEAL);
+    if(S.hp != null && S.hp < maxHp()) hpSet(S.hp + EAT_HEAL);
     Snd.play('pick'); Buddy.cheer(); hungerWarn = 8;
     toast(`🍖 식량을 먹었어요 (남은 식량 ${S.c.food}개)`);
   }
@@ -5425,18 +5430,18 @@ function placeHunger(dt){
 
 /* ---------- 체력 ---------- */
 function hpSet(v){
-  S.hp = Math.max(0, Math.min(PLAYER_HP, v));
-  const h = Math.round(S.hp);
-  elHpBar.style.width = (S.hp/PLAYER_HP*100) + '%';
-  elHpTxt.textContent = h;
-  elHp.classList.toggle('low', S.hp <= 34);
+  const MX = maxHp();
+  S.hp = Math.max(0, Math.min(MX, v));
+  elHpBar.style.width = (S.hp/MX*100) + '%';
+  elHpTxt.textContent = Math.round(S.hp).toLocaleString();
+  elHp.classList.toggle('low', S.hp <= MX*0.34);
 }
 /* 다치면 화면이 붉어지고 체력이 줄어든다 */
 function hurt(amount, force, cause){
   if(dead || (paused && !force)) return;
   if(S.suit) amount *= .25;               // 🦾 슈트가 대신 받아 준다
   hurtT = 0;
-  hpSet((S.hp==null?PLAYER_HP:S.hp) - amount);
+  hpSet((S.hp==null?maxHp():S.hp) - amount);
   camShake = Math.max(camShake, .8);
   Snd.play('boarHit', .8);
   elHurt.style.transition = 'opacity .12s';
@@ -5462,9 +5467,9 @@ function hurt(amount, force, cause){
 function updateHp(dt){
   elHp.style.display = 'flex';
   if(paused || dead) return;
-  if(S.hp == null) hpSet(PLAYER_HP);
+  if(S.hp == null) hpSet(maxHp());
   hurtT += dt;
-  if(hurtT > HEAL_DELAY && S.hp < PLAYER_HP) hpSet(S.hp + HEAL_RATE*dt);
+  if(hurtT > HEAL_DELAY && S.hp < maxHp()) hpSet(S.hp + HEAL_RATE*maxHp()/PLAYER_HP*dt);
 }
 
 function updateHunger(dt){
@@ -7990,7 +7995,7 @@ function netRespawn(){
   if(CAVE.on) caveLeave(false);       // 동굴 안이었다면 먼저 밖으로 나온다
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
-  hpSet(PLAYER_HP); hurtT = 0;
+  hpSet(maxHp()); hurtT = 0;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
   for(const it of ITEMS){ it.view.visible=false; handRest(it); }
@@ -8048,7 +8053,7 @@ function startEra(){
   resetCounts(); S.mission={};
   if(S.eraIndex>0) S.c.food = (S.foodCarry!=null ? S.foodCarry : 4);   // 앞 시대에서 가져온 식량
   S.hunger = 100; S.starve = null; S.armed = false; hungerMul = 1; hungerWarn = 0; atkAt = -1e9;
-  hpSet(PLAYER_HP); hurtT = 0;
+  hpSet(maxHp()); hurtT = 0;
   equipId = null; swingT = 0;
   aiming = false; aimK = 0; reloadT = 0; firing = false;
   /* 새 시대에서는 가진 총의 탄창을 모두 채워 준다 */
