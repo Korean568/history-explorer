@@ -2292,6 +2292,13 @@ const Voice = {
 
 /* 🕊️ fly */
 function voiceFly(){
+  /* 🦾 슈트를 입어야 날 수 있다 */
+  if(!S.suit){
+    Snd.throttle('claySoft', 400, .65);
+    toast('🦾 슈트를 먼저 입어야 날 수 있어요');
+    Guide.say('🦾 <b>슈트</b>를 입어야 날 수 있어요 — 🔵 아크리액터를 들고 <b>클릭</b>하세요.', 3.4);
+    return;
+  }
   flyOn = !flyOn;
   Snd.play(flyOn ? 'levelUp' : 'claySoft', .85);
   camShake = Math.max(camShake, .5);
@@ -2448,6 +2455,7 @@ function updateShield(dt){
     shieldTP.position.set(-.16,-.66,.12);
     shieldTP.visible = false; bodyArms[0].add(shieldTP);      // 왼팔
   }
+  if(flyOn && !S.suit) flyOn = false;      // 슈트가 없으면 날 수 없다
   if(shieldT > 0) shieldT = Math.max(0, shieldT - dt);
   const on = shieldT > 0 && !dead;
   /* 생길 때 커지고, 사라질 때 작아진다 */
@@ -2642,7 +2650,7 @@ function updateBody(dt, t){
 function toggleSuit(){
   if(paused || dead) return;
   S.suit = !S.suit;
-  if(!S.suit) S.buster = false;            // 슈트를 벗으면 버스터도 함께 벗는다
+  if(!S.suit){ S.buster = false; flyOn = false; }   // 슈트를 벗으면 버스터도 날기도 풀린다
   /* 입으면 체력이 5000 으로 가득 차고, 벗으면 사람의 몸으로 돌아온다 */
   hpSet(S.suit ? maxHp() : Math.min(PLAYER_HP, Math.max(1, (S.hp/SUIT_HP)*PLAYER_HP)));
   suitT = SUIT_ANIM;
