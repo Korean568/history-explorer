@@ -480,6 +480,13 @@
     background:rgba(255,255,255,.9);border:3px solid var(--bark);border-radius:14px;
     padding:7px 12px;font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px;
     transition:background .8s,color .8s,border-color .8s;}
+  /* 슈트를 입고 있을 때 */
+  #suitChip{position:absolute;top:calc(56px + env(safe-area-inset-top));left:252px;
+    background:linear-gradient(90deg,rgba(190,60,44,.92),rgba(216,166,58,.92));
+    color:#fff;border-radius:11px;padding:5px 11px;font-size:12.5px;font-weight:800;
+    letter-spacing:.02em;pointer-events:none;white-space:nowrap;display:none;
+    box-shadow:0 0 14px rgba(159,228,255,.55);}
+
   #clock #clockTxt{display:inline-block;min-width:76px;}
   #clock .bar{width:62px;height:9px;border-radius:6px;background:#e3d5bb;overflow:hidden;position:relative;}
   #clock .bar i{position:absolute;top:0;left:0;height:100%;border-radius:6px;width:0;
@@ -497,6 +504,7 @@
     background:radial-gradient(ellipse at center,rgba(190,28,18,0) 32%,rgba(190,28,18,.8) 100%);}
   @media (max-width:620px){
     #clock{left:14px;top:calc(60px + env(safe-area-inset-top));}
+    #suitChip{left:14px;top:calc(104px + env(safe-area-inset-top));}
     #stats{top:calc(108px + env(safe-area-inset-top));}
     #danger{top:calc(112px + env(safe-area-inset-top));font-size:13.5px;padding:8px 12px;}
   }
@@ -623,6 +631,7 @@
   <div id="era">🪨 구석기 시대</div>
   <button id="sndBtn" title="소리 켜기/끄기">🔊</button>
   <div id="clock"><span id="clockIcon">☀️</span><span id="clockTxt">낮</span><span class="bar"><i id="clockBar"></i></span></div>
+  <div id="suitChip">🦾 슈트 ON</div>
   <div id="missions"><h4>🎯 오늘의 순서</h4><ul></ul></div>
   <div id="stats">
     <div id="chips"></div>
@@ -713,6 +722,7 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elGuide=$('#guide'), elGMsg=$('#gMsg'), elGArrow=$('#gArrow'),
       elGDist=$('#gDist'), elGNav=$('#gNav'), elGAvatar=$('#gAvatar'),
       elHunger=$('#hungerWrap'), elHungerBar=$('#hungerBar'), elHungerTxt=$('#hungerTxt'),
+      elSuitChip=$('#suitChip'),
       elHp=$('#hpWrap'), elHpBar=$('#hpBar'), elHpTxt=$('#hpTxt'),
       elBoss=$('#boss'), elBossName=$('#bossName'), elBossFill=$('#bossFill'), elBossSub=$('#bossSub'),
       elGd=$('#gd'), elGdCv=$('#gdCv'), elGdLeft=$('#gdLeft'), elGdName=$('#gdName'),
@@ -2171,7 +2181,190 @@ const Animals = {
 };
 
 /* =========================================================
-   1-D. AI 탐험 도우미 "롭"
+   1-C-3. 내 몸 (3인칭) 과 🦾 슈트
+     C 키를 누르면 카메라가 몸에서 떨어져 뒤에서 따라옵니다.
+     아크리액터를 들고 누르면 갑주가 하나씩 날아와 붙습니다.
+   ========================================================= */
+let thirdOn  = false;            // 3인칭인가
+let bodyG    = null;             // 내 몸
+let plainParts = [], armorParts = [], bodyLegs = [], bodyArms = [];
+let coreLt   = null;
+const SUIT_ANIM = 1.15;          // 장착에 걸리는 시간(초)
+let   suitT  = 0;                // 남은 장착 모션 시간
+
+function bodyModel(){
+  const g = new THREE.Group();
+  const SKIN = 0xd8a273, FUR = 0x8a6a45, HAIR = 0x3a2a1c;
+  const RED = 0xa32c22, RED2 = 0xc7392c, GOLD = 0xd8a63a, STEEL = 0x4a4f57;
+  plainParts = []; armorParts = []; bodyLegs = []; bodyArms = [];
+
+  /* 살 / 갑주를 한 자리에 겹쳐 두고, 보이는 쪽만 바꿉니다 */
+  const put = (parent, mesh, armor)=>{
+    parent.add(mesh);
+    mesh.userData.home = { x:mesh.position.x, y:mesh.position.y, z:mesh.position.z };
+    (armor ? armorParts : plainParts).push(mesh);
+    if(armor) mesh.visible = false;
+    return mesh;
+  };
+
+  /* ── 다리 : 엉덩이를 축으로 흔든다 ── */
+  for(const sd of [-1,1]){
+    const hip = new THREE.Group(); hip.position.set(.17*sd, .84, 0); g.add(hip);
+    bodyLegs.push(hip);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.105,.085,.84,6), M(SKIN));
+    leg.position.y = -.42; put(hip, leg, false);
+    const gr = new THREE.Mesh(new THREE.BoxGeometry(.24,.86,.24), M(RED));
+    gr.position.y = -.42; put(hip, gr, true);
+    const knee = new THREE.Mesh(new THREE.BoxGeometry(.26,.10,.26), M(GOLD));
+    knee.position.y = -.36; put(hip, knee, true);
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(.27,.20,.36), M(RED2));
+    boot.position.set(0,-.76,.05); put(hip, boot, true);
+  }
+
+  /* ── 몸통 ── */
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.50,.62,.28), M(FUR));
+  torso.position.y = 1.14; put(g, torso, false);
+  const aTorso = new THREE.Mesh(new THREE.BoxGeometry(.58,.66,.36), M(RED));
+  aTorso.position.y = 1.14; put(g, aTorso, true);
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(.60,.12,.38), M(GOLD));
+  belt.position.y = .84; put(g, belt, true);
+  const abs = new THREE.Mesh(new THREE.BoxGeometry(.44,.16,.37), M(GOLD));
+  abs.position.y = 1.00; put(g, abs, true);
+
+  /* 가슴의 아크리액터 */
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(.115,.030,6,16), M(GOLD));
+  ring.position.set(0,1.28,.185); ring.rotation.x = 0; put(g, ring, true);
+  const core = new THREE.Mesh(new THREE.CircleGeometry(.095,14),
+    new THREE.MeshBasicMaterial({color:0xcaf2ff}));
+  core.position.set(0,1.28,.195); put(g, core, true);
+
+  /* ── 팔 : 어깨를 축으로 흔든다 ── */
+  for(const sd of [-1,1]){
+    const sh = new THREE.Group(); sh.position.set(.35*sd, 1.38, 0); g.add(sh);
+    bodyArms.push(sh);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(.082,.072,.66,6), M(SKIN));
+    arm.position.y = -.33; put(sh, arm, false);
+    const aArm = new THREE.Mesh(new THREE.BoxGeometry(.20,.68,.20), M(RED));
+    aArm.position.y = -.33; put(sh, aArm, true);
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(.26,.20,.26), M(RED2));
+    pad.position.y = -.02; put(sh, pad, true);
+    const glove = new THREE.Mesh(new THREE.BoxGeometry(.21,.18,.22), M(GOLD));
+    glove.position.y = -.66; put(sh, glove, true);
+    const palm = new THREE.Mesh(new THREE.CircleGeometry(.055,10),
+      new THREE.MeshBasicMaterial({color:0xcaf2ff}));
+    palm.position.set(0,-.74,.02); palm.rotation.x = Math.PI/2; put(sh, palm, true);
+  }
+
+  /* ── 머리 ── */
+  const head = new THREE.Group(); head.position.y = 1.62; g.add(head);
+  const skull = new THREE.Mesh(new THREE.BoxGeometry(.32,.34,.30), M(SKIN));
+  put(head, skull, false);
+  const hair = new THREE.Mesh(new THREE.BoxGeometry(.35,.13,.33), M(HAIR));
+  hair.position.y = .18; put(head, hair, false);
+  for(const sd of [-1,1]){
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.02), M(0x2a2320));
+    eye.position.set(.075*sd,.02,.16); put(head, eye, false);
+  }
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(.36,.38,.34), M(RED2));
+  put(head, helm, true);
+  const face = new THREE.Mesh(new THREE.BoxGeometry(.30,.22,.06), M(GOLD));
+  face.position.set(0,-.02,.16); put(head, face, true);
+  const visor = new THREE.Mesh(new THREE.PlaneGeometry(.22,.055),
+    new THREE.MeshBasicMaterial({color:0xcaf2ff}));
+  visor.position.set(0,.03,.20); put(head, visor, true);
+  const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(STEEL));
+  crest.position.y = .20; put(head, crest, true);
+
+  coreLt = new THREE.PointLight(0x9fe4ff, 0, 10, 2);
+  coreLt.position.set(0,1.28,.45); g.add(coreLt);
+
+  g.userData.noHole = true;
+  return g;
+}
+
+/* 몸을 그린다 (3인칭일 때만 보인다) */
+function updateBody(dt, t){
+  if(!bodyG){ bodyG = bodyModel(); scene.add(bodyG); }
+
+  /* 장착 모션 : 부위가 하나씩 날아와 붙는다 */
+  if(suitT > 0){
+    suitT = Math.max(0, suitT - dt);
+    const k = 1 - suitT/SUIT_ANIM;                 // 0 → 1
+    const n = armorParts.length;
+    armorParts.forEach((m,i)=>{
+      const st = (i/n)*0.5;
+      let a = (k - st)/0.5; a = Math.max(0, Math.min(1, a));
+      const e = S.suit ? a : 1-a;
+      const ease = 1 - Math.pow(1-e, 3);
+      const h = m.userData.home;
+      m.visible = e > 0.001;
+      m.position.set(h.x*(1 + (1-ease)*2.2),
+                     h.y + (1-ease)*1.5,
+                     h.z*(1 + (1-ease)*2.2) + (1-ease)*(h.x>=0?.8:-.8));
+      m.scale.setScalar(0.05 + ease*0.95);
+    });
+    plainParts.forEach(m=> m.visible = S.suit ? (k < .45) : (k > .45));
+    if(suitT <= 0){
+      armorParts.forEach(m=>{ const h=m.userData.home;
+        m.position.set(h.x,h.y,h.z); m.scale.setScalar(1); m.visible = !!S.suit; });
+      plainParts.forEach(m=> m.visible = !S.suit);
+    }
+  }
+  if(coreLt) coreLt.intensity = S.suit ? (1.4 + Math.sin(t*3)*0.25) : 0;
+
+  bodyG.visible = thirdOn && !dead;
+  if(!bodyG.visible) return;
+  bodyG.position.set(player.x, 0, player.z);
+  bodyG.rotation.y = yaw + Math.PI;      // 카메라가 보는 쪽 = 뒷모습이 보인다
+  /* 걸을 때 팔다리를 젓는다 */
+  const swing = Math.sin(stepPhase*TAU) * bobLevel * (running ? .85 : .55);
+  bodyLegs[0].rotation.x =  swing; bodyLegs[1].rotation.x = -swing;
+  bodyArms[0].rotation.x = -swing*.8; bodyArms[1].rotation.x = swing*.8;
+}
+
+/* 🦾 슈트 입기 / 벗기 */
+function toggleSuit(){
+  if(paused || dead) return;
+  S.suit = !S.suit;
+  suitT = SUIT_ANIM;
+  camShake = Math.max(camShake, S.suit ? 1.0 : .4);
+  /* 철컥 — 부위가 하나씩 붙는 소리 */
+  const cl = [0, 160, 320, 470, 620, 780, 930];
+  cl.forEach((ms,i)=> setTimeout(()=>Snd.play(i%2 ? 'metalStir' : 'boltRelease', .75), ms));
+  setTimeout(()=>Snd.play(S.suit ? 'levelUp' : 'claySoft', .9), 980);
+  elSuitChip.style.display = S.suit ? 'block' : 'none';
+  toast(S.suit ? '🦾 슈트를 장착했어요!' : '🦾 슈트를 벗었어요');
+  if(S.suit){
+    Buddy.cheer();
+    Guide.cheer('🦾 <b>슈트 장착!</b> 더 빠르게 달리고, 다치는 것도 크게 줄어듭니다.<br>'+
+                '<b>C</b> 키를 누르면 3인칭으로 슈트를 볼 수 있어요.', 4.4);
+  }
+  updateAtkBtn();
+}
+
+/* 1인칭 ↔ 3인칭 */
+function toggleThird(){
+  if(paused || dead) return;
+  thirdOn = !thirdOn;
+  const iw = equippedItem();
+  if(iw) iw.view.visible = !thirdOn;
+  Snd.play('pick', .7);
+  toast(thirdOn ? '🎥 3인칭 — C 키로 되돌아갑니다' : '🎥 1인칭');
+}
+
+/* 아이템창을 든 손 버튼(모바일)의 글씨 */
+function updateAtkBtn(){
+  const ab = document.getElementById('atkBtn');
+  if(!ab) return;
+  ab.style.display = (equipId && usingTouch) ? 'flex' : 'none';
+  const it = equippedItem();
+  ab.innerHTML = (it && it.suit)
+    ? '🦾<span>' + (S.suit ? '슈트 해제' : '슈트 장착') + '</span>'
+    : '⚔️<span>공격</span>';
+}
+
+/* =========================================================
+   1-D. AI 탐험 도우미 "롭\"
         · 3D 동행 캐릭터 + 화면 안내 패널 + 목표 방향 화살표
    ========================================================= */
 const Buddy = (function(){
@@ -2629,6 +2822,33 @@ const ITEMS = [
     /* roll : 총 자체를 돌리지 않고 화면 안에서만 세우는 각도 (윗면이 보이지 않는다) */
     reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.08,-.88,.14], roll:.75 },
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } },
+  /* 낡은 상자에서 찾는 동력원 — 들고 누르면 슈트가 입혀진다 */
+  { id:'arc', key:'6', ic:'🔵', nm:'아크리액터', range:0, dmg:0, kill:false, suit:true, cd:400,
+    have:()=> !!S.arc,
+    pos:[.40,-.40,-.74], rot:[-.28,.30,.16],
+    make(){
+      const g = new THREE.Group();
+      const shell = new THREE.Mesh(new THREE.CylinderGeometry(.30,.30,.11,16), M(0x4a4f57));
+      shell.rotation.x = Math.PI/2; g.add(shell);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(.28,.045,8,20), M(0xd8a63a));
+      g.add(rim);
+      const inner = new THREE.Mesh(new THREE.TorusGeometry(.17,.030,8,18), M(0xb9bec6));
+      inner.position.z = .04; g.add(inner);
+      const core = new THREE.Mesh(new THREE.CircleGeometry(.155,16),
+        new THREE.MeshBasicMaterial({color:0xcaf2ff}));
+      core.position.z = .058; g.add(core);
+      const tri = new THREE.Mesh(new THREE.CircleGeometry(.085,3),
+        new THREE.MeshBasicMaterial({color:0xffffff}));
+      tri.position.z = .062; g.add(tri);
+      for(let i=0;i<8;i++){                      // 둘레의 코일
+        const a = i/8*TAU;
+        const c2 = new THREE.Mesh(new THREE.BoxGeometry(.05,.09,.05), M(0x6f7681));
+        c2.position.set(Math.cos(a)*.225, Math.sin(a)*.225, .03);
+        c2.rotation.z = a; g.add(c2);
+      }
+      const lt = new THREE.PointLight(0x9fe4ff, 1.1, 4, 2); lt.position.z = .3; g.add(lt);
+      g.scale.setScalar(.52); return g;
+    } },
   /* 샌즈가 남긴 뼈다귀 — 늑대에게 주면 친구가 된다 */
   { id:'bone', key:'6', ic:'🦴', nm:'뼈다귀', range:6.0, dmg:0, kill:false, tame:true, cd:600,
     have:()=> (S.bone||0) > 0,
@@ -2832,8 +3052,7 @@ function equip(id){
   equipId = off ? null : id;
   swingT = 0;
   if(!off){ it.view.visible = true; }
-  const ab = document.getElementById('atkBtn');
-  if(ab) ab.style.display = (equipId && usingTouch) ? 'flex' : 'none';
+  updateAtkBtn();
   aiming = false; firing = false; reloadT = 0;
   if(!off && it.gun && (!S.mag || S.mag[it.id]==null)) setAmmo(it, magSize(it));
   drawAmmo();
@@ -3620,9 +3839,10 @@ function hideItem(x,z){
 }
 /* 나무 상자 : 한 번만 열 수 있다. loot 로 안에 든 것을 정한다 */
 function supplyCrate(x,z,rotY,loot){
-  const ak = (loot==='ak');
-  const W1 = ak ? 0x6f4c2a : 0x9a6b3f, W2 = ak ? 0x543921 : 0x7a5231,
-        W3 = ak ? 0x7d5730 : 0xb0855a;
+  const ak = (loot==='ak'), arc = (loot==='arc'), rare = ak || arc;
+  const W1 = arc ? 0x4f5b63 : ak ? 0x6f4c2a : 0x9a6b3f,
+        W2 = arc ? 0x38424a : ak ? 0x543921 : 0x7a5231,
+        W3 = arc ? 0x5e6d77 : ak ? 0x7d5730 : 0xb0855a;
   const g=new THREE.Group();
   const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,.9,1.1),M(W1));
   body.position.y=.45; g.add(body);
@@ -3643,6 +3863,15 @@ function supplyCrate(x,z,rotY,loot){
   lid.position.set(0,.1,.55); pivot.add(lid);
   const knob=new THREE.Mesh(new THREE.BoxGeometry(.34,.13,.14),M(0x6b4a2a));
   knob.position.set(0,.2,1.02); pivot.add(knob);
+  /* 아크리액터 상자는 틈에서 푸른 빛이 샌다 */
+  if(arc){
+    const seam = new THREE.Mesh(new THREE.PlaneGeometry(1.42,.06),
+      new THREE.MeshBasicMaterial({color:0x9fe4ff}));
+    seam.position.set(0,.88,.56); g.add(seam);
+    const lt2 = new THREE.PointLight(0x9fe4ff, .9, 7, 2);
+    lt2.position.set(0,1.1,0); g.add(lt2);
+    animated.push((t)=>{ lt2.intensity = .6 + Math.sin(t*2.6)*.35; });
+  }
   /* 오래된 상자에는 이끼가 덮여 있다 */
   if(ak){
     for(let i=0;i<5;i++){
@@ -3654,23 +3883,35 @@ function supplyCrate(x,z,rotY,loot){
 
   g.position.set(x,0,z); g.rotation.y=rotY||0; world.add(g);
   colliders.push({x,z,r:1.15});
-  glow(g, ak ? 0x241a10 : 0x2a1c0c);
+  glow(g, arc ? 0x10222a : ak ? 0x241a10 : 0x2a1c0c);
 
   /* 열리는 움직임 */
   let opened=false, k=0;
   animated.push(()=>{ if(opened && k<1){ k=Math.min(1,k+.06); pivot.rotation.x=-k*1.35; } });
-  const openIt=()=>{ opened=true; Snd.play('woodGet'); pickFx(x,1.45,z, ak?0xffd76a:0xf6d05a); };
+  const openIt=()=>{ opened=true; Snd.play('woodGet');
+    pickFx(x,1.45,z, arc?0x9fe4ff : ak?0xffd76a : 0xf6d05a); };
 
   const it={
     /* 이스터에그 상자는 사람마다 따로 연다(net:'solo') */
-    nid:nidSeq++, net: ak ? 'solo' : 'pick', x, z, range:3.4, tag: ak ? null : 'food',
-    label:()=> ak ? '📦 낡은 상자 열기' : '📦 상자 열기',
+    nid:nidSeq++, net: rare ? 'solo' : 'pick', x, z, range:3.4, tag: rare ? null : 'food',
+    label:()=> arc ? '📦 낯선 상자 열기' : ak ? '📦 낡은 상자 열기' : '📦 상자 열기',
     ready:()=>true,
     /* 다른 사람이 먼저 열었을 때 : 뚜껑만 열린다 */
     ghost(){ openIt(); removeIt(it); },
     act(){
       openIt(); removeIt(it);
-      if(ak){
+      if(arc){
+        S.arc = true; drawHotbar();
+        Snd.play('metalStir', 1.0);
+        setTimeout(()=>Snd.play('levelUp', .9), 200);
+        centerMsg('<h2>🔵 ？？？</h2>'+
+          '<p>상자 안에서 <b>푸르게 빛나는 동그란 장치</b>가 나왔어요.</p>'+
+          `<p style="opacity:.8">아이템창 <b>${slotOf('arc')}번</b> — 들고 <b>클릭</b>하면 슈트가 입혀집니다.<br>`+
+          '<b>C</b> 키를 누르면 3인칭으로 볼 수 있어요.</p>', 6000);
+        toast('🔵 아크리액터를 찾았어요!');
+        Buddy.cheer();
+        Guide.say('🔵 <b>이것도 선사시대 물건이 아닌데…</b> 들고 눌러 볼까?', 5);
+      } else if(ak){
         S.ak = true; S.mag = Object.assign({}, S.mag, {ak: AK_MAG});
         Snd.play('boltPull', 1.0);
         setTimeout(()=>Snd.play('boltRelease', 1.0), 180);
@@ -4944,6 +5185,8 @@ function easterEgg(){
      quiet 이므로 '오늘 밤 모닥불이 켜졌나' 판정에는 끼지 않는다. */
   firePits.push({x:EX, z:EZ, lit:()=>true, quiet:true});
   if(!S.ak) supplyCrate(EX,EZ,-.35,'ak');   // 이미 찾았으면 상자는 놓지 않는다
+  /* 아크리액터가 든 낯선 상자 */
+  if(!S.arc) supplyCrate(47.2, 57.9, .6, 'arc');
 }
 function siteMarker(x,z,col){
   const g=new THREE.Group();
@@ -5191,6 +5434,7 @@ function hpSet(v){
 /* 다치면 화면이 붉어지고 체력이 줄어든다 */
 function hurt(amount, force, cause){
   if(dead || (paused && !force)) return;
+  if(S.suit) amount *= .25;               // 🦾 슈트가 대신 받아 준다
   hurtT = 0;
   hpSet((S.hp==null?PLAYER_HP:S.hp) - amount);
   camShake = Math.max(camShake, .8);
@@ -7356,6 +7600,7 @@ function attack(){
   const cd = it.gun ? (autoFire ? AK_CD_AUTO : AK_CD_SEMI) : (it.cd || ATK_CD_MS);
   if(now - atkAt < cd) return;
   if(it.gun){ shoot(it, now); return; }
+  if(it.suit){ atkAt = now; toggleSuit(); return; }
   if(it.tame){ atkAt = now; swingT = 0.36; tameSwing(it); return; }
   atkAt = now; swingT = 0.36;
   Snd.play(it.kill ? 'metalStir' : 'stoneMove', 1.0);
@@ -7884,7 +8129,8 @@ addEventListener('keydown',e=>{
   }
   if(e.code==='Space' && GD.on){ e.preventDefault(); GD.jump(); }
   if(e.code==='KeyR'){ e.preventDefault(); reload(); }
-  if(e.code==='KeyV'){ e.preventDefault(); toggleFireMode(); } });
+  if(e.code==='KeyV'){ e.preventDefault(); toggleFireMode(); }
+  if(e.code==='KeyC'){ e.preventDefault(); toggleThird(); } });
 addEventListener('keyup',e=>{ keys[e.code]=false;
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') running=false; });
 addEventListener('blur',()=>{ running=false; for(const k in keys) keys[k]=false; });
@@ -8191,7 +8437,8 @@ function tick(){
     moveMag=len;
     if(len>0.05){
       const runK = running ? 1.7 : 1;            // 달리기는 걷기의 1.7배
-      const sp=8.2*speedMul*hungerMul*runK*dt, s=Math.sin(yaw), c=Math.cos(yaw);
+      const suitK = S.suit ? 1.35 : 1;                       // 🦾 슈트는 더 빠르다
+      const sp=8.2*speedMul*hungerMul*runK*suitK*dt, s=Math.sin(yaw), c=Math.cos(yaw);
       let nx=player.x+(mx*c+mz*s)*sp, nz=player.z+(-mx*s+mz*c)*sp;
       // 충돌
       for(const o of colliders){
@@ -8228,8 +8475,20 @@ function tick(){
   const sway = (running?0.032:0.018)*bobLevel*Math.sin(stepPhase*Math.PI);
   if(camShake>0) camShake=Math.max(0,camShake-dt*2.4);
   const sh = camShake>0 ? Math.sin(t*46)*camShake*0.12 : 0;
-  camera.position.set(player.x+Math.cos(yaw)*sway, 1.72+dip+sh, player.z-Math.sin(yaw)*sway);
-  camera.rotation.set(pitch+sh*0.12, yaw, -sway*0.35);
+  if(thirdOn){
+    /* 몸은 그 자리에 두고, 카메라만 뒤로 물러난다 */
+    camera.position.set(player.x, 1.72+dip*.4+sh, player.z);
+    camera.rotation.set(pitch+sh*0.12, yaw, 0);
+    camera.updateMatrixWorld(true);
+    const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
+    const D = 5.4;
+    camera.position.set(player.x - fw.x*D,
+                        Math.max(.85, 1.72 - fw.y*D + .55),
+                        player.z - fw.z*D);
+  } else {
+    camera.position.set(player.x+Math.cos(yaw)*sway, 1.72+dip+sh, player.z-Math.sin(yaw)*sway);
+    camera.rotation.set(pitch+sh*0.12, yaw, -sway*0.35);
+  }
 
   /* ---- 위치·시대에 따른 환경음 ---- */
   ambAcc+=dt;
@@ -8265,6 +8524,8 @@ function tick(){
   }
   updateReload(dt);
   updateHand(dt, t);
+  updateBody(dt, t);
+  if(thirdOn){ const iw = equippedItem(); if(iw) iw.view.visible = false; }
   GD.update(dt);
   updateSceneFx(dt);
   updateAlly(dt, t);
