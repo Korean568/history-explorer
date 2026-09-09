@@ -1200,7 +1200,7 @@ sun.position.set(40,70,25); scene.add(sun);
 let world = new THREE.Group(); scene.add(world);
 
 const BOUND = 68;
-const player = { x:0, z:44 };
+const player = { x:0, y:0, z:44 };     // y : 땅에서 떠오른 높이 (날 때만 0 보다 큽니다)
 let yaw = 0, pitch = -0.05;
 let dragMode = null;      // {onMove(dx,dy), onEnd()} — 3D 오브젝트를 직접 드래그하는 모드
 let speedMul = 1;         // 무거운 돌을 나를 때 느려진다
@@ -1692,7 +1692,8 @@ const Boars = {
         const dG = Math.hypot(player.x-b.x, player.z-b.z);
         if(b.state==='chase'){ chasing = true; closest = Math.min(closest, dG); }
         b.hitCd = Math.max(0, (b.hitCd||0) - dt);
-        if(b.state==='chase' && dG<1.75 && !dead && b.hitCd<=0){ b.hitCd = BOAR_HIT_CD; hurt(BOAR_DMG); }
+        if(b.state==='chase' && dG<1.75 && !dead && !airborne() && b.hitCd<=0){
+          b.hitCd = BOAR_HIT_CD; hurt(BOAR_DMG); }
         continue;
       }
 
@@ -1781,7 +1782,7 @@ const Boars = {
 
       /* 받혔다! 체력이 깎인다 */
       b.hitCd = Math.max(0, (b.hitCd||0) - dt);
-      if(b.state==='chase' && d<1.75 && !dead && b.hitCd<=0){
+      if(b.state==='chase' && d<1.75 && !dead && !airborne() && b.hitCd<=0){
         b.hitCd = BOAR_HIT_CD;
         hurt(BOAR_DMG);
         /* 받은 힘에 조금 밀려난다 */
@@ -2153,7 +2154,7 @@ const Animals = {
         for(const e of a.g.userData.eyes) e.material.color.setHex(ec);
         /* 화났을 때만 문다 */
         a.hitCd = Math.max(0, a.hitCd - dt);
-        if(a.angry && !guardFire && d < 1.6 && !dead && a.hitCd <= 0){
+        if(a.angry && !guardFire && d < 1.6 && !dead && !airborne() && a.hitCd <= 0){
           a.hitCd = WOLF_HIT_CD;
           Snd.play('wolfBite', .9);
           hurt(WOLF_DMG, false, 'wolf');
@@ -2210,6 +2211,7 @@ const Mic = {
             src.connect(this.ana);              // 스피커로는 내보내지 않는다
           }catch(e){}
           toast('🎤 마이크가 켜졌어요');
+          Voice.start();                       // 🗣️ 이제 말로 부릴 수 있다
         })
         .catch(()=>{ toast('🎤 마이크를 쓰지 않기로 했어요'); });
     }catch(e){}
@@ -2230,6 +2232,131 @@ const Mic = {
     this.stream = null; this.ctx = null; this.ana = null; this.ok = false;
   }
 };
+
+/* =========================================================
+   🗣️ 음성 명령
+      "fly"    — 날기를 켜고 끕니다 (W · ↑ 로 보는 쪽으로 날아갑니다)
+      "shield" — 왼팔에 방패가 생겨 2초 동안 모든 공격을 막습니다
+   ========================================================= */
+let flyOn   = false;             // 날고 있는가
+let shieldT = 0;                 // 방패가 남은 시간(초)
+const FLY_SPEED  = 15;           // 나는 빠르기
+const FLY_MAX    = 55;           // 올라갈 수 있는 높이
+const SHIELD_SEC = 2.0;          // 방패가 버티는 시간
+const airborne = ()=> player.y > 3;      // 이만큼 떠 있으면 땅의 것들이 못 닿는다
+
+const Voice = {
+  rec:null, on:false, last:{},
+
+  start(){
+    if(this.on) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ toast('🎤 이 브라우저는 음성 명령을 못 알아들어요'); return; }
+    let r;
+    try{ r = new SR(); }catch(e){ return; }
+    r.lang = 'en-US';            // fly · shield 는 영어로 알아듣습니다
+    r.continuous = true;
+    r.interimResults = true;
+    r.onresult = (e)=>{
+      let txt = '';
+      for(let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript + ' ';
+      this.heard(txt.toLowerCase());
+    };
+    r.onerror = ()=>{};
+    r.onend = ()=>{ if(this.on){ try{ r.start(); }catch(e){} } };   // 끊기면 다시 켠다
+    this.rec = r; this.on = true;
+    try{ r.start(); }catch(e){ this.on = false; return; }
+    toast('🗣️ 음성 명령이 켜졌어요 — "fly" · "shield"');
+  },
+
+  /* 같은 말을 연달아 알아들어도 한 번만 듣는다 */
+  fire(name, fn){
+    const now = performance.now();
+    if(now - (this.last[name] || 0) < 1500) return;
+    this.last[name] = now;
+    fn();
+  },
+
+  heard(t){
+    if(paused || dead) return;
+    if(/\bfl(y|ies|ight)\b/.test(t) || t.indexOf('플라이') >= 0) this.fire('fly', voiceFly);
+    if(/\bshields?\b/.test(t) || t.indexOf('실드') >= 0 || t.indexOf('쉴드') >= 0)
+      this.fire('shield', voiceShield);
+  },
+
+  stop(){ this.on = false; try{ if(this.rec) this.rec.stop(); }catch(e){} }
+};
+
+/* 🕊️ fly */
+function voiceFly(){
+  flyOn = !flyOn;
+  Snd.play(flyOn ? 'levelUp' : 'claySoft', .85);
+  camShake = Math.max(camShake, .5);
+  toast(flyOn ? '🕊️ 날 수 있어요! W(또는 ↑)를 누르면 보는 쪽으로 날아갑니다'
+              : '🕊️ 날기를 껐어요 — 천천히 내려옵니다');
+  if(flyOn) Guide.cheer('🕊️ <b>날기!</b> 보고 있는 쪽으로 날아갑니다. '+
+                        '다시 <b>"fly"</b> 라고 하면 내려와요.', 3.8);
+}
+
+/* 🛡️ shield */
+function voiceShield(){
+  shieldT = SHIELD_SEC;
+  Snd.play('metalStir', .95);
+  setTimeout(()=>Snd.play('boltRelease', .7), 120);
+  camShake = Math.max(camShake, .4);
+  toast('🛡️ 방패! 2초 동안 모든 공격을 막습니다');
+}
+
+/* 하늘색 방패 (불투명도 25%) */
+function shieldMesh(){
+  const g = new THREE.Group();
+  const face = new THREE.Mesh(new THREE.CircleGeometry(1, 26),
+    new THREE.MeshBasicMaterial({color:0x7fd4ff, transparent:true, opacity:.25,
+                                 side:THREE.DoubleSide, depthWrite:false, fog:false}));
+  g.add(face);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, .055, 8, 30),
+    new THREE.MeshBasicMaterial({color:0xbfefff, transparent:true, opacity:.55,
+                                 depthWrite:false, fog:false}));
+  g.add(rim);
+  for(let i=0;i<3;i++){                       // 안쪽 테두리 무늬
+    const r2 = new THREE.Mesh(new THREE.TorusGeometry(.30+i*.24, .022, 6, 24),
+      new THREE.MeshBasicMaterial({color:0xbfefff, transparent:true, opacity:.32,
+                                   depthWrite:false, fog:false}));
+    r2.position.z = .012; g.add(r2);
+  }
+  g.userData.noHole = true;
+  return g;
+}
+
+let shieldFP = null, shieldTP = null;
+function updateShield(dt){
+  if(!shieldFP){
+    shieldFP = shieldMesh();
+    shieldFP.position.set(-.46,-.24,-.92); shieldFP.rotation.set(0,.42,0);
+    shieldFP.visible = false; camera.add(shieldFP);
+  }
+  if(!shieldTP && bodyArms.length){
+    shieldTP = shieldMesh();
+    shieldTP.position.set(-.16,-.66,.12);
+    shieldTP.visible = false; bodyArms[0].add(shieldTP);      // 왼팔
+  }
+  if(shieldT > 0) shieldT = Math.max(0, shieldT - dt);
+  const on = shieldT > 0 && !dead;
+  /* 생길 때 커지고, 사라질 때 작아진다 */
+  const grow = Math.min(1, (SHIELD_SEC - shieldT)/0.22);
+  const fade = Math.min(1, shieldT/0.30);
+  const k = Math.max(0.01, Math.min(grow, fade));
+  if(shieldFP){ shieldFP.visible = on && !thirdOn; shieldFP.scale.setScalar(.62*k); }
+  if(shieldTP){ shieldTP.visible = on &&  thirdOn; shieldTP.scale.setScalar(.60*k); }
+
+  /* 지금 켜져 있는 것들을 화면 위에 알려 준다 */
+  const chips = [];
+  if(S.suit)    chips.push('🦾 슈트');
+  if(flyOn)     chips.push('🕊️ 비행');
+  if(shieldT>0) chips.push('🛡️ 방패');
+  elSuitChip.style.display = chips.length ? 'block' : 'none';
+  if(chips.length) elSuitChip.textContent = chips.join('   ·   ');
+}
 
 /* =========================================================
    1-C-3. 내 몸 (3인칭) 과 🦾 슈트
@@ -2365,7 +2492,7 @@ function updateBody(dt, t){
 
   bodyG.visible = thirdOn && !dead;
   if(!bodyG.visible) return;
-  bodyG.position.set(player.x, 0, player.z);
+  bodyG.position.set(player.x, player.y, player.z);
   bodyG.rotation.y = yaw + Math.PI;      // 카메라가 보는 쪽 = 뒷모습이 보인다
   /* 걸을 때 팔다리를 젓는다 */
   const swing = Math.sin(stepPhase*TAU) * bobLevel * (running ? .85 : .55);
@@ -3961,7 +4088,9 @@ function supplyCrate(x,z,rotY,loot){
         centerMsg('<h2>🔵 ？？？</h2>'+
           '<p>상자 안에서 <b>푸르게 빛나는 동그란 장치</b>가 나왔어요.</p>'+
           `<p style="opacity:.8">아이템창 <b>${slotOf('arc')}번</b> — 들고 <b>클릭</b>하면 슈트가 입혀집니다.<br>`+
-          '<b>C</b> 키를 누르면 3인칭으로 볼 수 있어요.</p>', 6000);
+          '<b>C</b> 키를 누르면 3인칭으로 볼 수 있어요.</p>'+
+          '<p style="opacity:.8">🗣️ 마이크에 대고 <b>"fly"</b> 라고 하면 날고, '+
+          '<b>"shield"</b> 라고 하면 방패가 생깁니다.</p>', 7000);
         toast('🔵 아크리액터를 찾았어요!');
         Buddy.cheer();
         Guide.say('🔵 <b>이것도 선사시대 물건이 아닌데…</b> 들고 눌러 볼까?', 5);
@@ -4813,7 +4942,7 @@ function seekUpdate(dt){
   /* 붙잡혔다 */
   seek.hitCd = Math.max(0, seek.hitCd - dt);
   const d = Math.hypot(player.x-seek.x, player.z-seek.z);
-  if(d < 1.9 && seek.hitCd <= 0){
+  if(d < 1.9 && seek.hitCd <= 0 && !airborne()){
     seek.hitCd = 1.2;
     camShake = 1.5;
     hurt(SEEK_DMG, false, 'seek');
@@ -5132,7 +5261,7 @@ function caveUpdate(dt){
       mam.g.position.set(mam.x, 0, mam.z);
       mam.g.rotation.y = Math.atan2(dx, dz) + Math.PI;
       mam.hitCd = Math.max(0, mam.hitCd - dt);
-      if(d < 5.0 && mam.hitCd <= 0){ mam.hitCd = 1.6; hurt(50); }
+      if(d < 5.0 && mam.hitCd <= 0 && !airborne()){ mam.hitCd = 1.6; hurt(50); }
     }
   }
   /* 버티기 : 매머드와 멧돼지를 다 잡은 뒤 2분 동안 가시를 피해야 한다 */
@@ -5488,6 +5617,12 @@ function hpSet(v){
 /* 다치면 화면이 붉어지고 체력이 줄어든다 */
 function hurt(amount, force, cause){
   if(dead || (paused && !force)) return;
+  if(shieldT > 0){                        // 🛡️ 방패가 다 막아 냈다
+    Snd.throttle('stoneHit', 120, .65);
+    pickFx(player.x, 1.4+player.y, player.z, 0x7fd4ff);
+    camShake = Math.max(camShake, .35);
+    return;
+  }
   if(S.suit) amount *= .25;               // 🦾 슈트가 대신 받아 준다
   hurtT = 0;
   hpSet((S.hp==null?maxHp():S.hp) - amount);
@@ -7836,7 +7971,7 @@ function shoot(it, now){
 
   /* 지금 서 있는 자리·보는 방향으로 카메라를 맞춘다.
      (총구 위치와 조준선을 정확히 읽기 위해서) */
-  camera.position.set(player.x, 1.72, player.z);
+  camera.position.set(player.x, 1.72+player.y, player.z);
   camera.rotation.set(pitch, yaw, 0);
   camera.updateMatrixWorld(true);
 
@@ -7856,7 +7991,7 @@ function shoot(it, now){
     const uv = new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
     ejectShell(ep, rt, uv, fwd);
   }
-  const eye = new THREE.Vector3(player.x, 1.72, player.z);
+  const eye = new THREE.Vector3(player.x, 1.72+player.y, player.z);
 
   const ads    = aimK > .6;
   const range  = ads ? it.range : it.range*0.55;
@@ -8043,6 +8178,7 @@ function netRespawn(){
   spreadStart();
   if(CAVE.on) caveLeave(false);       // 동굴 안이었다면 먼저 밖으로 나온다
   camShake = 0; speedMul = 1; dragMode = null; running = false;
+  flyOn = false; shieldT = 0; player.y = 0;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
   hpSet(maxHp()); hurtT = 0;
   equipId = null; swingT = 0;
@@ -8140,6 +8276,7 @@ function startEra(){
   spreadStart();
   refresh(); paused=false; fade(0); nearest=null;
   speedMul=1; camShake=0; dragMode=null; running=false; dead=false;
+  flyOn=false; shieldT=0; player.y=0;
   elHurt.style.opacity='0';
   stepPhase=0; lastStep=0; bobLevel=0; ambRamp=1.6;
   updateSky(0); updateClockHud();
@@ -8493,9 +8630,26 @@ function tick(){
       const runK = running ? 1.7 : 1;            // 달리기는 걷기의 1.7배
       const suitK = S.suit ? 1.35 : 1;                       // 🦾 슈트는 더 빠르다
       const sp=8.2*speedMul*hungerMul*runK*suitK*dt, s=Math.sin(yaw), c=Math.cos(yaw);
-      let nx=player.x+(mx*c+mz*s)*sp, nz=player.z+(-mx*s+mz*c)*sp;
-      // 충돌
-      for(const o of colliders){
+      let nx, nz;
+      if(flyOn){
+        /* 🕊️ 날 때 : W(↑) 를 누르면 지금 보고 있는 쪽으로 — 위아래까지 — 나아간다 */
+        const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
+        const rt = new THREE.Vector3(-fw.z, 0, fw.x);
+        if(rt.lengthSq() > 1e-6) rt.normalize();
+        const d3 = new THREE.Vector3(fw.x*(-mz) + rt.x*mx,
+                                     fw.y*(-mz),
+                                     fw.z*(-mz) + rt.z*mx);
+        if(d3.lengthSq() > 1e-6) d3.normalize();
+        const fsp = FLY_SPEED*runK*dt;
+        nx = player.x + d3.x*fsp;
+        nz = player.z + d3.z*fsp;
+        const top = CAVE.on ? 11 : FLY_MAX;
+        player.y = Math.max(0, Math.min(top, player.y + d3.y*fsp));
+      } else {
+        nx = player.x+(mx*c+mz*s)*sp; nz = player.z+(-mx*s+mz*c)*sp;
+      }
+      // 충돌 — 높이 떠 있으면 바위 위를 지나간다
+      if(player.y < 2.5) for(const o of colliders){
         const dx=nx-o.x, dz=nz-o.z, d=Math.hypot(dx,dz), r=o.r+.7;
         if(d<r && d>0.001){ nx=o.x+dx/d*r; nz=o.z+dz/d*r; }
       }
@@ -8511,6 +8665,8 @@ function tick(){
       player.x = nx; player.z = nz;
     }
   }
+  /* 날기를 끄면 천천히 내려온다 */
+  if(!flyOn && player.y > 0) player.y = Math.max(0, player.y - 11*dt);
 
   /* ---- 발걸음 위상 : Head Bob 과 발소리를 같은 시계로 움직인다 ---- */
   const moving = moveMag>0.06 && !paused;
@@ -8531,16 +8687,16 @@ function tick(){
   const sh = camShake>0 ? Math.sin(t*46)*camShake*0.12 : 0;
   if(thirdOn){
     /* 몸은 그 자리에 두고, 카메라만 뒤로 물러난다 */
-    camera.position.set(player.x, 1.72+dip*.4+sh, player.z);
+    camera.position.set(player.x, 1.72+player.y+dip*.4+sh, player.z);
     camera.rotation.set(pitch+sh*0.12, yaw, 0);
     camera.updateMatrixWorld(true);
     const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
     const D = 5.4;
     camera.position.set(player.x - fw.x*D,
-                        Math.max(.85, 1.72 - fw.y*D + .55),
+                        Math.max(.85, 1.72 + player.y - fw.y*D + .55),
                         player.z - fw.z*D);
   } else {
-    camera.position.set(player.x+Math.cos(yaw)*sway, 1.72+dip+sh, player.z-Math.sin(yaw)*sway);
+    camera.position.set(player.x+Math.cos(yaw)*sway, 1.72+player.y+dip+sh, player.z-Math.sin(yaw)*sway);
     camera.rotation.set(pitch+sh*0.12, yaw, -sway*0.35);
   }
 
@@ -8579,6 +8735,7 @@ function tick(){
   updateReload(dt);
   updateHand(dt, t);
   updateBody(dt, t);
+  updateShield(dt);
   if(thirdOn){ const iw = equippedItem(); if(iw) iw.view.visible = false; }
   GD.update(dt);
   updateSceneFx(dt);
