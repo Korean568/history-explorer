@@ -1264,8 +1264,9 @@ const NIGHT_SEC  = 90;               // 밤 1분 30초
 /* ---------- 체력 ---------- */
 const PLAYER_HP   = 100;         // 사람의 체력
 const SUIT_HP     = 5000;        // 🦾 슈트를 입었을 때의 체력
-/* 지금의 최대 체력 — 슈트를 입으면 커진다 */
-const maxHp = ()=> (S && S.suit) ? SUIT_HP : PLAYER_HP;
+const BUSTER_HP   = 15000;       // 💥 버스터를 입었을 때의 체력
+/* 지금의 최대 체력 — 무엇을 입었느냐에 따라 커진다 */
+const maxHp = ()=> !S ? PLAYER_HP : S.buster ? BUSTER_HP : S.suit ? SUIT_HP : PLAYER_HP;
 const BOAR_HP     = 150;         // 멧돼지의 체력
 const BOAR_DMG    = 34;          // 멧돼지에게 한 번 받히면 줄어드는 체력 (세 번이면 쓰러진다)
 const BOAR_HIT_CD = 1.2;         // 멧돼지가 다시 받기까지 걸리는 시간(초)
@@ -2266,7 +2267,7 @@ const Voice = {
     r.onend = ()=>{ if(this.on){ try{ r.start(); }catch(e){} } };   // 끊기면 다시 켠다
     this.rec = r; this.on = true;
     try{ r.start(); }catch(e){ this.on = false; return; }
-    toast('🗣️ 음성 명령이 켜졌어요 — "fly" · "shield"');
+    toast('🗣️ 음성 명령 — "fly" · "shield" · "buster" · "beam"');
   },
 
   /* 같은 말을 연달아 알아들어도 한 번만 듣는다 */
@@ -2282,6 +2283,8 @@ const Voice = {
     if(/\bfl(y|ies|ight)\b/.test(t) || t.indexOf('플라이') >= 0) this.fire('fly', voiceFly);
     if(/\bshields?\b/.test(t) || t.indexOf('실드') >= 0 || t.indexOf('쉴드') >= 0)
       this.fire('shield', voiceShield);
+    if(/\bbusters?\b/.test(t) || t.indexOf('버스터') >= 0) this.fire('buster', voiceBuster);
+    if(/\bbeams?\b/.test(t) || t.indexOf('빔') >= 0) this.fire('beam', voiceBeam);
   },
 
   stop(){ this.on = false; try{ if(this.rec) this.rec.stop(); }catch(e){} }
@@ -2296,6 +2299,111 @@ function voiceFly(){
               : '🕊️ 날기를 껐어요 — 천천히 내려옵니다');
   if(flyOn) Guide.cheer('🕊️ <b>날기!</b> 보고 있는 쪽으로 날아갑니다. '+
                         '다시 <b>"fly"</b> 라고 하면 내려와요.', 3.8);
+}
+
+/* 💥 buster — 더 무거운 갑주. 클릭하면 둘레의 것들을 한 번에 쓸어버린다. */
+const BUSTER_R   = 7.5;          // 내려칠 때 닿는 거리
+const BUSTER_CD  = 1200;         // 다시 내려치기까지(밀리초)
+const BEAM_LEN   = 60;           // 레이저가 뻗는 거리
+const BEAM_R     = 1.8;          // 레이저 굵기(맞는 범위)
+const BEAM_DMG   = 5000;         // 레이저가 주는 피해
+
+function voiceBuster(){
+  S.buster = !S.buster;
+  if(S.buster && !S.suit){ S.suit = true; suitT = SUIT_ANIM; }   // 슈트 위에 덧입는다
+  hpSet(maxHp());                                  // 체력이 가득 찬다
+  const cl = [0, 150, 300, 460, 620, 800];
+  cl.forEach((ms,i)=> setTimeout(()=>Snd.play(i%2 ? 'thud' : 'metalStir', .85), ms));
+  setTimeout(()=>Snd.play(S.buster ? 'levelUp' : 'claySoft', .9), 900);
+  camShake = Math.max(camShake, S.buster ? 1.6 : .5);
+  toast(S.buster ? '💥 버스터 장착! 체력 15,000 — 클릭하면 둘레를 쓸어버립니다'
+                 : '💥 버스터를 벗었어요');
+  if(S.buster) Guide.cheer('💥 <b>버스터!</b> 체력이 <b>15,000</b> 이 되고, '+
+                           '클릭하면 <b>7.5m 안의 모든 것</b>이 쓰러집니다.', 4.2);
+  updateAtkBtn();
+}
+
+/* 둘레를 한 번에 쓸어버린다 */
+function busterSmash(){
+  camShake = 2.0;
+  Snd.play('thud', 1.0);
+  Snd.throttle('rpgBoom', 200, .75);
+  /* 퍼져 나가는 고리 */
+  const ring = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.5, 30),
+    new THREE.MeshBasicMaterial({color:0xffc46a, transparent:true, opacity:.9,
+                                 side:THREE.DoubleSide, depthWrite:false, fog:false}));
+  ring.rotation.x = -Math.PI/2;
+  ring.position.set(player.x, .12, player.z);
+  ring.userData.noHole = true; scene.add(ring);
+  sceneFx.push({ m:ring, t:.45, max:.45, grow: BUSTER_R/1.25 });
+  pickFx(player.x, 1.2+player.y, player.z, 0xffc46a);
+
+  let n = 0;
+  /* 멧돼지 */
+  for(let i=Boars.list.length-1;i>=0;i--){
+    const b = Boars.list[i];
+    if(Math.hypot(b.x-player.x, b.z-player.z) <= BUSTER_R){ Boars.kill(i, true); n++; }
+  }
+  /* 늑대·토끼 (길들인 늑대는 건드리지 않는다) */
+  for(let i=Animals.list.length-1;i>=0;i--){
+    const a = Animals.list[i];
+    if(a.tame) continue;
+    if(Math.hypot(a.x-player.x, a.z-player.z) <= BUSTER_R){ Animals.kill(i, true); n++; }
+  }
+  /* 큰 적 — 샌즈도 매머드도 버스터 앞에서는 예외가 없다 */
+  for(const bs of bosses.slice()){
+    if(!bs.alive) continue;
+    if(Math.hypot(bs.x-player.x, bs.z-player.z) > BUSTER_R + (bs.r||1)) continue;
+    const was = bs.vuln; bs.vuln = true;
+    bossHit(bs, 1e12); n++;
+    if(bs.alive) bs.vuln = was;
+  }
+  /* 시크 — 쓰러뜨리면 버틴 것으로 친다 */
+  if(seek && Math.hypot(seek.x-player.x, seek.z-player.z) <= BUSTER_R + 1.5){
+    pickFx(seek.x, 2.0, seek.z, 0xffc46a);
+    seekWin(); n++;
+  }
+  if(n) toast('💥 ' + n + '마리를 쓸어버렸어요!');
+}
+
+/* 🔆 beam — 보고 있는 쪽으로 레이저를 쏜다 (부하 샌즈의 빛줄기와 같은 것) */
+function voiceBeam(){
+  const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
+  const ex = player.x, ey = 1.72 + player.y, ez = player.z;
+  const tx = ex + fw.x*BEAM_LEN, ty = ey + fw.y*BEAM_LEN, tz = ez + fw.z*BEAM_LEN;
+  fxBeam(ex, ey-.18, ez, tx, ty, tz, 0x9fe6ff, .35, .24);
+  fxBeam(ex, ey-.18, ez, tx, ty, tz, 0xffffff, .22, .10);
+  Snd.play('metalStir', 1.0);
+  Snd.throttle('rpgShot', 200, .6);
+  camShake = Math.max(camShake, .9);
+
+  /* 빔이 지나가는 길에 있는 것을 태운다 (바닥에 비친 선으로 따진다) */
+  const hl = Math.hypot(fw.x, fw.z) || 1e-6;
+  const hx = fw.x/hl, hz = fw.z/hl;
+  const onBeam = (x, z, r)=>{
+    const vx = x-ex, vz = z-ez;
+    const along = vx*hx + vz*hz;
+    if(along < 0 || along > BEAM_LEN) return false;
+    return Math.hypot(vx - hx*along, vz - hz*along) <= (r || BEAM_R);
+  };
+  let n = 0;
+  for(let i=Boars.list.length-1;i>=0;i--){
+    const b = Boars.list[i];
+    if(onBeam(b.x, b.z)){ Boars.damage(i, BEAM_DMG); n++; }
+  }
+  for(let i=Animals.list.length-1;i>=0;i--){
+    const a = Animals.list[i];
+    if(a.tame) continue;
+    if(onBeam(a.x, a.z)){ Animals.damage(i, BEAM_DMG); n++; }
+  }
+  for(const bs of bosses.slice()){
+    if(!bs.alive) continue;
+    if(!onBeam(bs.x, bs.z, BEAM_R + (bs.r||1))) continue;
+    const was = bs.vuln; bs.vuln = true;
+    bossHit(bs, BEAM_DMG); n++;
+    if(bs.alive) bs.vuln = was;
+  }
+  if(n) toast('🔆 레이저가 ' + n + '마리를 맞혔어요!');
 }
 
 /* 🛡️ shield */
@@ -2351,7 +2459,8 @@ function updateShield(dt){
 
   /* 지금 켜져 있는 것들을 화면 위에 알려 준다 */
   const chips = [];
-  if(S.suit)    chips.push('🦾 슈트');
+  if(S.buster)  chips.push('💥 버스터');
+  else if(S.suit) chips.push('🦾 슈트');
   if(flyOn)     chips.push('🕊️ 비행');
   if(shieldT>0) chips.push('🛡️ 방패');
   elSuitChip.style.display = chips.length ? 'block' : 'none';
@@ -2453,6 +2562,30 @@ function bodyModel(){
   const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(STEEL));
   crest.position.y = .20; put(head, crest, true);
 
+  /* ── 💥 버스터 : 더 두껍고 큰 덧갑주 ── */
+  const bust = new THREE.Group(); bust.visible = false; g.add(bust);
+  const BST = 0x8c2a20, BST2 = 0xb8452f, BGOLD = 0xc99a34;
+  const badd = (mesh)=>{ bust.add(mesh); return mesh; };
+  const back = new THREE.Mesh(new THREE.BoxGeometry(.72,.62,.26), M(BST));
+  back.position.set(0,1.16,-.28); badd(back);
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(.78,.46,.20), M(BST2));
+  chest.position.set(0,1.22,.22); badd(chest);
+  for(const sd of [-1,1]){
+    const pauld = new THREE.Mesh(new THREE.BoxGeometry(.34,.32,.40), M(BST2));
+    pauld.position.set(.46*sd,1.42,0); badd(pauld);
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(.30,.34,.32), M(BST));
+    fore.position.set(.42*sd,1.00,.02); badd(fore);
+    const fist = new THREE.Mesh(new THREE.BoxGeometry(.30,.28,.30), M(BGOLD));
+    fist.position.set(.42*sd,.74,.04); badd(fist);
+    const thigh = new THREE.Mesh(new THREE.BoxGeometry(.30,.40,.30), M(BST));
+    thigh.position.set(.19*sd,.60,0); badd(thigh);
+    const jet = new THREE.Mesh(new THREE.CylinderGeometry(.09,.11,.22,8), M(0x4a4f57));
+    jet.position.set(.26*sd,1.20,-.40); badd(jet);
+  }
+  const collar = new THREE.Mesh(new THREE.BoxGeometry(.50,.14,.34), M(BGOLD));
+  collar.position.set(0,1.50,0); badd(collar);
+  g.userData.buster = bust;
+
   coreLt = new THREE.PointLight(0x9fe4ff, 0, 10, 2);
   coreLt.position.set(0,1.28,.45); g.add(coreLt);
 
@@ -2490,6 +2623,11 @@ function updateBody(dt, t){
   }
   if(coreLt) coreLt.intensity = S.suit ? (1.4 + Math.sin(t*3)*0.25) : 0;
 
+  /* 버스터는 몸집이 커진다 */
+  if(bodyG.userData.buster) bodyG.userData.buster.visible = !!S.buster && suitT <= 0;
+  const want = S.buster ? 1.42 : 1;
+  bodyG.scale.setScalar(bodyG.scale.x + (want - bodyG.scale.x)*Math.min(1, dt*6));
+
   bodyG.visible = thirdOn && !dead;
   if(!bodyG.visible) return;
   bodyG.position.set(player.x, player.y, player.z);
@@ -2504,8 +2642,9 @@ function updateBody(dt, t){
 function toggleSuit(){
   if(paused || dead) return;
   S.suit = !S.suit;
+  if(!S.suit) S.buster = false;            // 슈트를 벗으면 버스터도 함께 벗는다
   /* 입으면 체력이 5000 으로 가득 차고, 벗으면 사람의 몸으로 돌아온다 */
-  hpSet(S.suit ? SUIT_HP : Math.min(PLAYER_HP, Math.max(1, (S.hp/SUIT_HP)*PLAYER_HP)));
+  hpSet(S.suit ? maxHp() : Math.min(PLAYER_HP, Math.max(1, (S.hp/SUIT_HP)*PLAYER_HP)));
   suitT = SUIT_ANIM;
   camShake = Math.max(camShake, S.suit ? 1.0 : .4);
   /* 철컥 — 부위가 하나씩 붙는 소리 */
@@ -2536,10 +2675,10 @@ function toggleThird(){
 function updateAtkBtn(){
   const ab = document.getElementById('atkBtn');
   if(!ab) return;
-  ab.style.display = (equipId && usingTouch) ? 'flex' : 'none';
+  ab.style.display = ((equipId || S.buster) && usingTouch) ? 'flex' : 'none';
   const it = equippedItem();
-  ab.innerHTML = (it && it.suit)
-    ? '🦾<span>' + (S.suit ? '슈트 해제' : '슈트 장착') + '</span>'
+  ab.innerHTML = S.buster ? '💥<span>내려치기</span>'
+    : (it && it.suit) ? '🦾<span>' + (S.suit ? '슈트 해제' : '슈트 장착') + '</span>'
     : '⚔️<span>공격</span>';
 }
 
@@ -5114,7 +5253,9 @@ function updateSceneFx(dt){
   for(let i=sceneFx.length-1;i>=0;i--){
     const f = sceneFx[i];
     f.t -= dt;
-    f.m.material.opacity = Math.max(0, (f.t/f.max) * (f.m.material.wireframe ? .55 : 1));
+    const kk = f.t/f.max;
+    if(f.grow) f.m.scale.setScalar(1 + (1-kk)*f.grow);
+    f.m.material.opacity = Math.max(0, kk * (f.m.material.wireframe ? .55 : 1));
     if(f.t <= 0){ scene.remove(f.m); sceneFx.splice(i,1); }
   }
 }
@@ -7783,9 +7924,16 @@ function netApplyFx(m){
 
 /* 비파형 동검 휘두르기 */
 function attack(){
-  const it = equippedItem();
-  if(!it || paused || dead) return;
+  if(paused || dead) return;
   const now = performance.now();
+  /* 💥 버스터를 입으면 클릭이 내려치기가 된다 */
+  if(S.buster){
+    if(now - atkAt < BUSTER_CD) return;
+    atkAt = now; swingT = .36; busterSmash();
+    return;
+  }
+  const it = equippedItem();
+  if(!it) return;
   const cd = it.gun ? (autoFire ? AK_CD_AUTO : AK_CD_SEMI) : (it.cd || ATK_CD_MS);
   if(now - atkAt < cd) return;
   if(it.gun){ shoot(it, now); return; }
@@ -8178,7 +8326,7 @@ function netRespawn(){
   spreadStart();
   if(CAVE.on) caveLeave(false);       // 동굴 안이었다면 먼저 밖으로 나온다
   camShake = 0; speedMul = 1; dragMode = null; running = false;
-  flyOn = false; shieldT = 0; player.y = 0;
+  flyOn = false; shieldT = 0; player.y = 0; S.buster = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
   hpSet(maxHp()); hurtT = 0;
   equipId = null; swingT = 0;
@@ -8276,7 +8424,7 @@ function startEra(){
   spreadStart();
   refresh(); paused=false; fade(0); nearest=null;
   speedMul=1; camShake=0; dragMode=null; running=false; dead=false;
-  flyOn=false; shieldT=0; player.y=0;
+  flyOn=false; shieldT=0; player.y=0; S.buster=false;
   elHurt.style.opacity='0';
   stepPhase=0; lastStep=0; bobLevel=0; ambRamp=1.6;
   updateSky(0); updateClockHud();
