@@ -773,6 +773,12 @@ const SOUNDS = {
   nightFall:     { url:null, vol:0.45 },
   dayBreak:      { url:null, vol:0.45 },
   owl:           { url:null, vol:0.28 },
+  wolfHowl:      { url:null, vol:0.40 },   // 멀리서 우는 소리
+  wolfGrowl:     { url:null, vol:0.42 },   // 으르렁
+  wolfBite:      { url:null, vol:0.55 },   // 문다
+  rabbitSqueak:  { url:null, vol:0.35 },   // 토끼가 놀란다
+  meatGet:       { url:null, vol:0.50 },   // 고기를 줍는다
+  meatEat:       { url:null, vol:0.55 },   // 고기를 먹는다
   /* 이스터에그 — sounds/ 폴더에 같은 이름의 .mp3 를 넣으면 그 소리를 씁니다.
      파일이 없으면 아래의 내장 합성음이 그대로 나옵니다. (소리-넣는법.md 참고) */
   gunShot:       { url:'sounds/gunShot.mp3', vol:0.55 },   // 발사
@@ -932,6 +938,24 @@ const Snd = (function(){
                     burst({type:'highpass',freq:4200,vol:.05*v,dur:.7,delay:.3}); },
     owl:(v)=>{ tone({type:'sine',freq:420,to:360,dur:.30,vol:.13*v});
                tone({type:'sine',freq:400,to:330,dur:.38,vol:.11*v,delay:.42}); },
+    /* ---- 늑대와 토끼 ---- */
+    wolfHowl:(v)=>{ tone({type:'sawtooth',freq:300,to:430,dur:.55,vol:.10*v});
+                    tone({type:'sine',freq:610,to:660,dur:1.10,vol:.13*v,delay:.30});
+                    tone({type:'sine',freq:612,to:520,dur:.70,vol:.09*v,delay:1.25});
+                    burst({type:'bandpass',freq:900,q:2.2,vol:.05*v,dur:1.6}); },
+    wolfGrowl:(v)=>{ tone({type:'sawtooth',freq:112,to:74,dur:.42,vol:.15*v});
+                     burst({type:'lowpass',freq:420,vol:.16*v,dur:.40});
+                     tone({type:'square',freq:168,to:120,dur:.22,vol:.05*v,delay:.10}); },
+    wolfBite:(v)=>{ burst({type:'bandpass',freq:2100,q:1.6,vol:.30*v,dur:.07});
+                    tone({freq:150,to:70,dur:.26,vol:.30*v});
+                    tone({type:'sawtooth',freq:330,to:130,dur:.22,vol:.12*v,delay:.04}); },
+    rabbitSqueak:(v)=>{ tone({type:'square',freq:1180,to:1560,dur:.07,vol:.10*v});
+                        tone({type:'square',freq:1320,to:980,dur:.09,vol:.08*v,delay:.10}); },
+    meatGet:(v)=>{ burst({type:'lowpass',freq:1500,sweep:500,vol:.24*v,dur:.20});
+                   tone({type:'triangle',freq:430,to:640,dur:.16,vol:.15*v}); },
+    meatEat:(v)=>{ burst({type:'lowpass',freq:900,vol:.26*v,dur:.22});
+                   burst({type:'lowpass',freq:760,vol:.22*v,dur:.20,delay:.26});
+                   tone({type:'triangle',freq:520,to:780,dur:.20,vol:.14*v,delay:.50}); },
     /* ---- 이스터에그 : 총 ----
        진짜 총소리는 ① 아주 짧고 날카로운 파열음 ② 가슴을 치는 저음
        ③ 노리쇠가 왕복하는 금속음 ④ 들판에 퍼지는 메아리 가 겹쳐서 들립니다. */
@@ -1223,6 +1247,17 @@ const PLAYER_HP   = 100;         // 사람의 체력
 const BOAR_HP     = 150;         // 멧돼지의 체력
 const BOAR_DMG    = 34;          // 멧돼지에게 한 번 받히면 줄어드는 체력 (세 번이면 쓰러진다)
 const BOAR_HIT_CD = 1.2;         // 멧돼지가 다시 받기까지 걸리는 시간(초)
+/* 🐺 늑대 : 멧돼지와 비슷한 빠르기 (걷는 사람 8.2 보다 조금 느립니다) */
+const WOLF_HP     = 90;
+const WOLF_DMG    = 18;
+const WOLF_HIT_CD = 1.0;
+const WOLF_SPEED  = 7.4;
+const WOLF_TAME_DMG = 50;        // 길들인 늑대가 멧돼지를 한 번 물 때
+/* 🐰 토끼 : 공격하지 않고 도망만 갑니다 */
+const RAB_HP      = 20;
+const RAB_SPEED   = 9.4;
+const MEAT_HEAL   = 30;          // 고기를 먹으면 함께 낫는 체력 (열매보다 많다)
+const MEAT_FILL   = 55;          // 고기를 먹으면 차는 배고픔
 const HEAL_DELAY  = 8;           // 다치지 않고 이만큼 지나면
 const HEAL_RATE   = 3;           //   1초에 이만큼씩 낫는다
 const EAT_HEAL    = 20;          // 식량을 먹으면 함께 회복되는 체력
@@ -1514,7 +1549,7 @@ const Boars = {
   kill(i, drop){
     const b=this.list[i]; this.list.splice(i,1);
     if(b.gate) S.gateDown = true;              // 문지기는 다시 나오지 않는다
-    if(drop && !CAVE.on) dropHide(b.x, b.z);
+    if(drop && !CAVE.on){ dropHide(b.x, b.z); dropMeat(b.x, b.z, 2); }
     const g=b.g; let a=0, life=0;
     pickFx(b.x, 1.0, b.z, 0xffd76a);
     animated.push(function f(t,dt){
@@ -1754,6 +1789,377 @@ const Boars = {
 
 };
 
+
+/* =========================================================
+   1-C-2. 늑대와 토끼
+     🐺 늑대 — 밤에 나타나 쫓아옵니다. 모닥불은 무서워합니다.
+     🐰 토끼 — 사람을 보면 폴짝폴짝 도망칩니다. 잡으면 고기를 남깁니다.
+   ========================================================= */
+function wolfModel(){
+  const g = new THREE.Group();
+  const fur = 0x6d7480, dark = 0x4a505a, pale = 0xb9bec6;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(.42,9,7), M(fur));
+  body.scale.set(.86,.86,1.6); body.position.y = .82; g.add(body);
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(.30,8,6), M(fur));
+  chest.scale.set(1,.95,1.1); chest.position.set(0,.86,.46); g.add(chest);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(.26,7,6), M(pale));
+  belly.scale.set(.80,.55,1.5); belly.position.set(0,.62,.06); g.add(belly);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.20,.26,.30,7), M(dark));
+  neck.rotation.x = Math.PI/2.3; neck.position.set(0,1.02,.62); g.add(neck);
+
+  const head = new THREE.Group(); head.position.set(0,1.14,.78); g.add(head);
+  const skull = new THREE.Mesh(new THREE.BoxGeometry(.30,.26,.34), M(fur));
+  skull.position.z = .10; head.add(skull);
+  const muzz = new THREE.Mesh(new THREE.CylinderGeometry(.09,.13,.30,6), M(dark));
+  muzz.rotation.x = Math.PI/2; muzz.position.set(0,-.05,.36); head.add(muzz);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(.045,6,5), M(0x22252a));
+  nose.position.set(0,-.03,.51); head.add(nose);
+  const eyes = [];
+  for(const sd of [-1,1]){
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(.09,.26,4), M(dark));
+    ear.position.set(.11*sd,.22,.02); ear.rotation.set(-.12,0,.20*sd); head.add(ear);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.045,6,5),
+      new THREE.MeshBasicMaterial({color:0xffe27a}));
+    eye.position.set(.095*sd,.06,.24); head.add(eye); eyes.push(eye);
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(.022,.075,4), M(0xf6f1e2));
+    fang.position.set(.045*sd,-.13,.44); fang.rotation.x = Math.PI; head.add(fang);
+  }
+  const legs = [];
+  for(let i=0;i<4;i++){
+    const lx = (i%2?1:-1)*.22, lz = (i<2?.40:-.42);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.075,.055,.80,5), M(dark));
+    leg.position.set(lx,.40,lz); g.add(leg); legs.push(leg);
+  }
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(.10,.045,.62,6), M(fur));
+  tail.position.set(0,.96,-.78); tail.rotation.x = -.85; g.add(tail);
+  /* 길들이면 나타나는 빨간 목걸이 */
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(.24,.045,6,12), M(0xcf3b3b));
+  collar.rotation.set(Math.PI/2.3, 0, 0); collar.position.set(0,1.00,.58);
+  collar.visible = false; g.add(collar);
+  g.userData = { head, legs, eyes, collar };
+  return g;
+}
+
+function rabbitModel(){
+  const g = new THREE.Group();
+  const fur = 0xcfc3b0, pale = 0xf3ece0, pink = 0xe0a3a8;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(.26,8,7), M(fur));
+  body.scale.set(.92,.86,1.15); body.position.y = .30; g.add(body);
+  const head = new THREE.Group(); head.position.set(0,.46,.24); g.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(.17,8,7), M(fur));
+  skull.scale.set(.92,.92,1.05); head.add(skull);
+  const snout = new THREE.Mesh(new THREE.SphereGeometry(.075,6,5), M(pale));
+  snout.position.set(0,-.05,.15); head.add(snout);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(.026,5,4), M(pink));
+  nose.position.set(0,-.03,.21); head.add(nose);
+  const eyes = [];
+  for(const sd of [-1,1]){
+    const ear = new THREE.Mesh(new THREE.CylinderGeometry(.042,.030,.32,6), M(fur));
+    ear.position.set(.075*sd,.26,-.01); ear.rotation.set(-.16,0,.24*sd); head.add(ear);
+    const inn = new THREE.Mesh(new THREE.CylinderGeometry(.022,.016,.22,5), M(pink));
+    inn.position.set(.079*sd,.25,.024); inn.rotation.set(-.16,0,.24*sd); head.add(inn);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.033,6,5),
+      new THREE.MeshBasicMaterial({color:0x2a2320}));
+    eye.position.set(.125*sd,.03,.10); head.add(eye); eyes.push(eye);
+  }
+  const legs = [];
+  for(let i=0;i<4;i++){
+    const lx = (i%2?1:-1)*.13, lz = (i<2?.16:-.16);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.05,.045,.26,5), M(pale));
+    leg.position.set(lx,.14,lz); g.add(leg); legs.push(leg);
+  }
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(.09,6,5), M(pale));
+  tail.position.set(0,.36,-.28); g.add(tail);
+  g.userData = { head, legs, eyes };
+  return g;
+}
+
+/* 늑대와 토끼는 사람마다 자기 화면에서 따로 돌아다닙니다
+   (멧돼지처럼 함께 나누지는 않아요) */
+const Animals = {
+  list: [], seq: 1, wolfT: 12, rabT: 2, howlT: 14, growlT: 0,
+
+  reset(){ this.list.length = 0; this.seq = 1;
+           this.wolfT = 12; this.rabT = 2; this.howlT = 14; this.growlT = 0; },
+  /* 동굴에 들어갈 때처럼 세계가 통째로 바뀌면 모두 치운다 */
+  clear(){ for(const a of this.list) world.remove(a.g); this.list.length = 0; },
+  count(kind){ let n = 0; for(const a of this.list) if(a.kind === kind) n++; return n; },
+
+  /* 사람에게서 멀고, 모닥불에서도 먼 자리를 고른다 */
+  findSpot(near, far){
+    let bx = 0, bz = 0, best = -1e9;
+    for(let t = 0; t < 26; t++){
+      const a = Math.random()*TAU, r = near + Math.random()*(far-near);
+      const cx = Math.max(-BOUND+3, Math.min(BOUND-3, player.x + Math.cos(a)*r));
+      const cz = Math.max(-BOUND+3, Math.min(BOUND-3, player.z + Math.sin(a)*r));
+      const dp = Math.hypot(cx-player.x, cz-player.z);
+      let df = 1e9;
+      for(const f of firePits) df = Math.min(df, Math.hypot(cx-f.x, cz-f.z));
+      const score = Math.min(dp, far) + Math.min(df, 24);
+      if(score > best){ best = score; bx = cx; bz = cz; }
+    }
+    return { x:bx, z:bz };
+  },
+
+  spawn(kind, at){
+    const wolf = kind === 'wolf';
+    const g = wolf ? wolfModel() : rabbitModel();
+    g.userData.noHole = true; world.add(g);
+    const p = at || this.findSpot(wolf ? 20 : 14, wolf ? 40 : 34);
+    g.position.set(p.x, 0, p.z); g.scale.setScalar(.25);
+    this.list.push({ nid: this.seq++, kind, g, x:p.x, z:p.z,
+                     dir: Math.random()*TAU, phase: Math.random()*TAU,
+                     hp: wolf ? WOLF_HP : RAB_HP, grow: .25, hitCd: 0,
+                     hop: 0, restT: 0, wx: p.x, wz: p.z,
+                     angry: false, angryT: 0,
+                     life: wolf ? 60 : 1e9,
+                     tame: false,
+                     speed: (wolf ? WOLF_SPEED : RAB_SPEED) + Math.random()*BOAR_SPEED_VAR });
+    if(wolf) Snd.play('wolfHowl', .55);
+  },
+
+  /* 때린다. 체력이 다 닳으면 쓰러지면서 고기를 남긴다.
+     돌려주는 값 : 'kill' 이면 쓰러졌고, 'hit' 이면 아직 살아 있다. */
+  damage(i, amount){
+    const a = this.list[i];
+    if(!a) return null;
+    a.hp -= amount;
+    if(a.hp <= 0){ this.kill(i, true); return 'kill'; }
+    pickFx(a.x, a.kind === 'wolf' ? 1.1 : .5, a.z, 0xd4423f);
+    Snd.play(a.kind === 'wolf' ? 'wolfGrowl' : 'rabbitSqueak', .8);
+    if(a.kind === 'rabbit') a.restT = 0;          // 놀라서 달아난다
+    else this.anger(a);                           // 늑대는 건드리면 화를 낸다
+    return 'hit';
+  },
+
+  /* 건드린 늑대와 가까이 있던 무리가 함께 달려든다 */
+  anger(a){
+    if(a.kind !== 'wolf' || a.tame) return;
+    const first = !a.angry;
+    a.angry = true; a.angryT = 25;
+    for(const o of this.list){
+      if(o === a || o.kind !== 'wolf' || o.angry || o.tame) continue;
+      if(Math.hypot(o.x-a.x, o.z-a.z) < 16){ o.angry = true; o.angryT = 25; }
+    }
+    if(first){ Snd.play('wolfGrowl', 1.0); toast('🐺 늑대가 화났어요! 무리가 달려듭니다'); }
+  },
+
+  kill(i, drop){
+    const a = this.list[i]; if(!a) return;
+    this.list.splice(i, 1);
+    if(drop) dropMeat(a.x, a.z, a.kind === 'wolf' ? 2 : 1);
+    const g = a.g; let t0 = 0, roll = 0;
+    pickFx(a.x, .9, a.z, 0xffd76a);
+    animated.push(function f(t, dt){
+      t0 += dt; roll = Math.min(1.5, roll + dt*4.5);
+      g.rotation.z = roll;
+      g.traverse(o=>{ if(o.material){ o.material.transparent = true;
+        o.material.opacity = Math.max(0, 1 - Math.max(0, t0-0.5)*1.4); } });
+      if(t0 > 1.4){ world.remove(g); removeAnim(f); }
+    });
+  },
+
+  update(dt){
+    if(CAVE.on){ if(this.list.length) this.clear(); return; }
+    this.T = (this.T || 0) + dt;
+
+    /* ---- 나타나기 : 늑대와 토끼는 밝은 낮에 돌아다닌다 ---- */
+    if(!paused && !dead){
+      const day = !Sky.isNight;
+      this.wolfT -= dt;
+      if(day && this.count('wolf') < 3 && this.wolfT <= 0){
+        this.wolfT = 12 + Math.random()*10;
+        this.spawn('wolf');
+      }
+      this.rabT -= dt;
+      if(day && this.count('rabbit') < 5 && this.rabT <= 0){
+        this.rabT = 7 + Math.random()*9;
+        this.spawn('rabbit');
+      }
+      /* 낮에 가끔 멀리서 우는 소리가 들린다 */
+      if(day){
+        this.howlT -= dt;
+        if(this.howlT <= 0){ this.howlT = 20 + Math.random()*20; Snd.play('wolfHowl', .30); }
+      }
+    }
+
+    /* 사람이 타오르는 모닥불 곁에 있으면 늑대도 다가오지 못한다 */
+    let guardFire = null;
+    for(const f of firePits){
+      if(f.lit() && Math.hypot(player.x-f.x, player.z-f.z) < FIRE_SAFE){ guardFire = f; break; }
+    }
+    let closest = 1e9, chasing = false;
+
+    for(let i = this.list.length-1; i >= 0; i--){
+      const a = this.list[i];
+      a.grow = Math.min(1, a.grow + dt*2.2);
+      a.g.scale.setScalar(a.grow * (a.kind === 'wolf' ? 1 : .9));
+      if(paused) continue;
+
+      const dx = player.x - a.x, dz = player.z - a.z;
+      const d = Math.max(0.0001, Math.hypot(dx, dz));
+      let tx = 0, tz = 0, sp = 0;
+
+      if(a.kind === 'wolf'){
+        /* 밤이 되면 숲으로 돌아간다 */
+        a.life -= dt;
+        const goHome = Sky.isNight || a.life <= 0;
+        /* 화는 오래가지 않는다. 멀리 달아나도 곧 가라앉는다. */
+        if(a.angry){
+          a.angryT -= dt;
+          if(a.angryT <= 0 || d > 46){ a.angry = false; a.angryT = 0; }
+        }
+        /* 모닥불이 가까우면 겁을 먹는다 */
+        let fx = 0, fz = 0, scare = 0;
+        for(const f of firePits){
+          if(!f.lit()) continue;
+          const ox = a.x-f.x, oz = a.z-f.z, od = Math.max(.001, Math.hypot(ox,oz));
+          if(od < FIRE_SAFE){ const w = 1-od/FIRE_SAFE; scare = Math.max(scare,w);
+                              fx += ox/od*w; fz += oz/od*w; }
+        }
+        if(a.tame){
+          /* 🦴 길들인 늑대 : 곁을 따라다니다가 멧돼지를 물어 쫓아낸다 */
+          a.life = 1e9;
+          let ti = -1, td = 15;
+          for(let k = 0; k < Boars.list.length; k++){
+            const b = Boars.list[k];
+            const bd3 = Math.hypot(b.x-a.x, b.z-a.z);
+            if(bd3 < td){ td = bd3; ti = k; }
+          }
+          a.hitCd = Math.max(0, a.hitCd - dt);
+          if(ti >= 0){
+            const b = Boars.list[ti];
+            const ox = b.x-a.x, oz = b.z-a.z, ol = Math.max(.001, Math.hypot(ox,oz));
+            tx = ox/ol; tz = oz/ol; sp = a.speed*1.15;
+            if(ol < 2.1 && a.hitCd <= 0){
+              a.hitCd = 1.1;
+              Snd.play('wolfBite', .7);
+              pickFx(b.x, 1.1, b.z, 0xd4423f);
+              Boars.damage(ti, WOLF_TAME_DMG);
+            }
+          } else if(d > 3.4){                 // 할 일이 없으면 사람 곁으로 돌아온다
+            tx = dx/d; tz = dz/d; sp = a.speed * (d > 12 ? 1.3 : .9);
+          }
+        } else if(goHome && !a.angry){
+          tx = -dx/d; tz = -dz/d; sp = a.speed*1.1;
+          if(d > 64){ world.remove(a.g); this.list.splice(i,1); continue; }
+        } else if(a.angry && guardFire){
+          const ox = a.x-guardFire.x, oz = a.z-guardFire.z, od = Math.max(.001, Math.hypot(ox,oz));
+          if(od < FIRE_SAFE+5){ tx = ox/od; tz = oz/od; sp = a.speed; }
+          else { const ang = Math.atan2(oz,ox)+1.4; tx = Math.cos(ang); tz = Math.sin(ang); sp = a.speed*.32; }
+        } else if(a.angry && scare > .02){
+          const fl = Math.max(.001, Math.hypot(fx,fz)); tx = fx/fl; tz = fz/fl; sp = a.speed*1.05;
+        } else if(a.angry){
+          tx = dx/d; tz = dz/d;
+          sp = a.speed * (d > 26 ? 1.06 : 1) * (speedMul < .95 ? .6 : 1);
+          chasing = true; closest = Math.min(closest, d);
+        } else {
+          /* 🐺 건드리지 않으면 해치지 않는다 — 어슬렁어슬렁 돌아다닌다 */
+          if(d < 2.4){                                   // 너무 붙으면 슬쩍 비켜선다
+            tx = -dx/d; tz = -dz/d; sp = a.speed*.45;
+          } else {
+            a.restT -= dt;
+            if(a.restT <= 0){
+              a.restT = 2.2 + Math.random()*3.2;
+              const ang = Math.random()*TAU, r = 5 + Math.random()*9;
+              a.wx = Math.max(-BOUND+3, Math.min(BOUND-3, a.x + Math.cos(ang)*r));
+              a.wz = Math.max(-BOUND+3, Math.min(BOUND-3, a.z + Math.sin(ang)*r));
+            }
+            const wx = a.wx - a.x, wz = a.wz - a.z, wd = Math.hypot(wx, wz);
+            if(wd > .6){ tx = wx/wd; tz = wz/wd; sp = a.speed*.28; }
+          }
+        }
+      } else {
+        /* 토끼 : 사람이 가까우면 달아나고, 아니면 조금씩 돌아다닌다 */
+        if(d < 11){
+          tx = -dx/d; tz = -dz/d; sp = a.speed;
+          a.restT = 0; a.wx = a.x - dx/d*14; a.wz = a.z - dz/d*14;
+          if(d < 6) Snd.throttle('rabbitSqueak', 1400, .5);
+        } else {
+          a.restT -= dt;
+          if(a.restT <= 0){
+            a.restT = 1.6 + Math.random()*2.6;
+            const ang = Math.random()*TAU, r = 4 + Math.random()*8;
+            a.wx = Math.max(-BOUND+3, Math.min(BOUND-3, a.x + Math.cos(ang)*r));
+            a.wz = Math.max(-BOUND+3, Math.min(BOUND-3, a.z + Math.sin(ang)*r));
+          }
+          const wx = a.wx - a.x, wz = a.wz - a.z, wd = Math.hypot(wx, wz);
+          if(wd > .6){ tx = wx/wd; tz = wz/wd; sp = a.speed*.32; }
+        }
+        if(d > 70){ world.remove(a.g); this.list.splice(i,1); continue; }
+      }
+
+      /* 서로 겹치지 않게 */
+      for(const o of this.list){
+        if(o === a) continue;
+        const ox = a.x-o.x, oz = a.z-o.z, od = Math.hypot(ox, oz);
+        if(od < 2.2 && od > .001){ tx += ox/od*.8; tz += oz/od*.8; }
+      }
+      const tl = Math.hypot(tx, tz);
+      if(tl > .001){ tx /= tl; tz /= tl; } else sp = 0;
+
+      /* 이동 + 바위 피하기 */
+      let nx = a.x + tx*sp*dt, nz = a.z + tz*sp*dt;
+      for(const o of colliders){
+        const ox = nx-o.x, oz = nz-o.z, od = Math.hypot(ox, oz);
+        const r = o.r + (a.kind === 'wolf' ? .9 : .5);
+        if(od < r && od > .001){ nx = o.x + ox/od*r; nz = o.z + oz/od*r; }
+      }
+      a.x = Math.max(-BOUND-6, Math.min(BOUND+6, nx));
+      a.z = Math.max(-BOUND-6, Math.min(BOUND+6, nz));
+
+      /* 바라보는 쪽 */
+      if(sp > .01){
+        const want = Math.atan2(tx, tz);
+        let diff = want - a.dir;
+        while(diff >  Math.PI) diff -= TAU;
+        while(diff < -Math.PI) diff += TAU;
+        a.dir += diff*Math.min(1, dt*7);
+      }
+
+      if(a.kind === 'wolf'){
+        a.phase += dt*sp*1.55;
+        /* 서 있을 때는 네 다리로 반듯이 선다 (움직이는 만큼만 다리를 젓는다) */
+        const mv = Math.min(1, sp/2.2);
+        const sw = Math.sin(a.phase)*mv, LG = a.g.userData.legs;
+        LG[0].rotation.x =  sw*.70; LG[3].rotation.x =  sw*.70;
+        LG[1].rotation.x = -sw*.70; LG[2].rotation.x = -sw*.70;
+        a.g.userData.head.rotation.x = Math.sin(a.phase*2)*.07*mv - .03;
+        a.g.rotation.set(0, a.dir, Math.sin(a.phase)*.04*mv);
+        a.g.position.set(a.x, Math.abs(Math.sin(a.phase))*.08*mv, a.z);
+        const ec = a.angry ? 0xff4a2a : (Sky.night > .35 ? 0xffe27a : 0xc9a24a);
+        for(const e of a.g.userData.eyes) e.material.color.setHex(ec);
+        /* 화났을 때만 문다 */
+        a.hitCd = Math.max(0, a.hitCd - dt);
+        if(a.angry && !guardFire && d < 1.6 && !dead && a.hitCd <= 0){
+          a.hitCd = WOLF_HIT_CD;
+          Snd.play('wolfBite', .9);
+          hurt(WOLF_DMG, false, 'wolf');
+          a.x += (a.x-player.x)/d*0.7; a.z += (a.z-player.z)/d*0.7;
+        }
+      } else {
+        /* 토끼는 폴짝폴짝 뛴다 */
+        const run = sp > .01;
+        a.hop += dt*(run ? (5.5 + sp*.7) : 1.4);
+        const hop = run ? Math.abs(Math.sin(a.hop))*.30 : 0;
+        const LG = a.g.userData.legs, sw = run ? Math.cos(a.hop) : 0;
+        LG[0].rotation.x = LG[1].rotation.x = -sw*.5;
+        LG[2].rotation.x = LG[3].rotation.x =  sw*.5;
+        a.g.rotation.set(-hop*.35, a.dir, 0);
+        a.g.position.set(a.x, hop, a.z);
+      }
+    }
+
+    /* 화난 늑대가 쫓아오면 으르렁거린다 */
+    if(!paused && chasing && closest < 26){
+      this.growlT -= dt;
+      if(this.growlT <= 0){
+        this.growlT = 2.4 + Math.random()*2.2;
+        Snd.play('wolfGrowl', Math.max(.35, 1-closest/32));
+      }
+    }
+  }
+};
 
 /* =========================================================
    1-D. AI 탐험 도우미 "롭"
@@ -2082,10 +2488,14 @@ function rpgBlast(x, y, z){
   };
   animated.push(f);
   pickFx(x, y, z, 0xffb056);
-  /* 9m 안의 멧돼지를 쓸어버린다 */
+  /* 9m 안의 짐승을 모두 쓸어버린다 */
   for(let i=Boars.list.length-1;i>=0;i--){
     const b = Boars.list[i];
     if(Math.hypot(b.x-x, b.z-z) <= 9) Boars.damage(i, 1972);
+  }
+  for(let i=Animals.list.length-1;i>=0;i--){
+    const a = Animals.list[i];
+    if(Math.hypot(a.x-x, a.z-z) <= 9) Animals.damage(i, 1972);
   }
 }
 
@@ -2210,6 +2620,21 @@ const ITEMS = [
     /* roll : 총 자체를 돌리지 않고 화면 안에서만 세우는 각도 (윗면이 보이지 않는다) */
     reloadBolt:{ pos:[-.020,-.155,-.600], rot:[.08,-.88,.14], roll:.75 },
     make(){ const g=akModel(); g.scale.setScalar(.90); return g; } },
+  /* 샌즈가 남긴 뼈다귀 — 늑대에게 주면 친구가 된다 */
+  { id:'bone', key:'6', ic:'🦴', nm:'뼈다귀', range:6.0, dmg:0, kill:false, tame:true, cd:600,
+    have:()=> (S.bone||0) > 0,
+    pos:[.44,-.44,-.82], rot:[-.22,.40,.46],
+    make(){
+      const g = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,.72,7), M(0xf2ead6));
+      g.add(shaft);
+      for(const sd of [-1,1])
+        for(const q of [-1,1]){
+          const k = new THREE.Mesh(new THREE.SphereGeometry(.115,7,6), M(0xf8f2e2));
+          k.position.set(q*.115, sd*.40, 0); g.add(k);
+        }
+      g.rotation.z = .5; g.scale.setScalar(.62); return g;
+    } },
   /* 동굴 끝에서 얻는 무기 */
   { id:'rpg', key:'5', ic:'🚀', nm:'RPG', range:60, dmg:1972, kill:true, gun:true, cd:1500,
     mag:1, reloadSec:3.2, shotSnd:'rpgShot',
@@ -3147,6 +3572,35 @@ function dropHide(x, z){
   it.net = 'solo';          // 사람마다 따로 줍는다 (서로 번호가 어긋나지 않게)
   return m;
 }
+/* 쓰러진 동물이 남기는 고기 */
+function meatItem(x,z){
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.SphereGeometry(.30,7,6), M(0xb4453d));
+  m.scale.set(1,.72,1.25); m.position.y = .26; g.add(m);
+  const fat = new THREE.Mesh(new THREE.SphereGeometry(.17,6,5), M(0xdd9a86));
+  fat.scale.set(1,.55,1.1); fat.position.set(0,.40,-.06); g.add(fat);
+  const bone = new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.46,6), M(0xf1e9d6));
+  bone.rotation.set(0,0,Math.PI/2.2); bone.position.set(.30,.34,.02); g.add(bone);
+  for(const sd of [-1,1]){
+    const k = new THREE.Mesh(new THREE.SphereGeometry(.075,6,5), M(0xf6f0e0));
+    k.position.set(.30 + .19*sd, .34 + .085*sd, .02); g.add(k);
+  }
+  g.position.set(x,0,z); g.rotation.y = Math.random()*TAU; world.add(g); return g;
+}
+/* 고기를 그 자리에 떨어뜨린다 (n 덩이) */
+function dropMeat(x, z, n){
+  n = n || 1;
+  const m = meatItem(x + (Math.random()-.5)*1.4, z + (Math.random()-.5)*1.4);
+  glow(m, 0x2a0d09); floatItem(m, .07, 0);
+  const it = addPickup(m, '🍗 고기 줍기 (' + n + ')', ()=>{
+    S.c.meat = (S.c.meat||0) + n;
+    Snd.play('meatGet');
+    toast('🍗 고기 ' + S.c.meat + '개 — ' + eatKeyTxt() + ' 로 먹을 수 있어요');
+    refresh();
+  }, 3.0, 0xd4726a, 'meat');
+  it.net = 'solo';          // 사람마다 따로 줍는다
+  return m;
+}
 function hideItem(x,z){
   const g=new THREE.Group();
   const h=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,.12,7),M(0x9a6b40));
@@ -3649,6 +4103,7 @@ function caveInside(x, z){
 /* ---------- 들어가고 나오기 ---------- */
 function caveEnter(){
   if(!S.ak){ toast('🔦 캄캄해서 그냥은 못 들어가요'); return; }
+  Animals.clear();                     // 늑대와 토끼는 동굴까지 따라오지 않는다
   /* 지금 세계를 통째로 치워 둔다 */
   CAVE.keep = { world, colliders, interactables, animated, firePits, nidSeq, bulletHoles,
                 boars: Boars.list, px: player.x, pz: player.z,
@@ -3824,7 +4279,8 @@ function bossHit(b, dmg){
     if(b.kind !== 'sans') world.remove(b.g);
     if(b.kind === 'mammoth'){
       Snd.play('thud', 1.0); camShake = 1.6;
-      toast('🐘 매머드를 쓰러뜨렸어요!');
+      dropMeat(b.x, b.z, 8);
+      toast('🐘 매머드를 쓰러뜨렸어요! 🍗 고기를 잔뜩 남겼습니다');
     } else {
       caveDefeated(b);
     }
@@ -3860,9 +4316,15 @@ function caveDefeated(sans){
 }
 
 /* 상으로 RPG 를 주고 동굴을 나온다 */
+const BONE_REWARD = 8;           // 샌즈가 남기는 뼈다귀 개수
 function caveReward(){
-  S.rpg = true; S.akScope = true; drawHotbar();
+  S.rpg = true; S.akScope = true;
+  S.bone = (S.bone||0) + BONE_REWARD;
+  drawHotbar();
   toast('🔭 AK-47 에 광학조준경이 달렸어요!');
+  setTimeout(()=>{
+    toast(`🦴 샌즈의 뼈다귀 ${BONE_REWARD}개를 주웠어요 — 늑대에게 내밀면 길들일 수 있어요`);
+  }, 1400);
   CAVE.phase = 'done';
   setTimeout(()=>caveLeave(true), 3400);
 }
@@ -4356,7 +4818,7 @@ function removeIt(it){ const i=interactables.indexOf(it); if(i>=0) interactables
    4. 게임 상태
    ========================================================= */
 const S = { eraIndex:0, c:{}, mission:{} };
-function resetCounts(){ S.c = {food:0,stick:0,hide:0,tool:0,polish:0,wood:0,seed:0,clay:0,grass:0,grain:0,copper:0,tin:0,pillar:0,cap:0}; }
+function resetCounts(){ S.c = {food:0,meat:0,stick:0,hide:0,tool:0,polish:0,wood:0,seed:0,clay:0,grass:0,grain:0,copper:0,tin:0,pillar:0,cap:0}; }
 
 /* ---------- 배고픔 ---------- */
 /* 5초에 1% 씩 줄어든다 (100% → 0% 이 500초). 달릴 때는 2배로 빨라진다. */
@@ -4371,16 +4833,25 @@ function eatKeyTxt(){ return usingTouch ? '🍖 게이지' : 'F 키'; }
 /* 식량 한 개를 먹는다 */
 function eat(){
   if(paused || dead || !hungerOn()) return;
-  if((S.c.food||0) <= 0){
+  const meat = S.c.meat||0, food = S.c.food||0;
+  if(meat <= 0 && food <= 0){
     Snd.throttle('claySoft', 400, .6);
-    Guide.say('🍖 먹을 <b>식량이 없어요!</b> 🍓 열매나 🐟 물고기를 찾아보세요.', 4);
+    Guide.say('🍖 먹을 것이 <b>하나도 없어요!</b> 🍓 열매를 따거나 🐰 동물을 사냥해 보세요.', 4);
     return;
   }
   if(S.hunger >= 99){ Guide.say('🍖 아직 배가 불러요.', 2.2); return; }
-  S.c.food--; S.hunger = Math.min(100, S.hunger + 40); refresh();
-  if(S.hp != null && S.hp < PLAYER_HP) hpSet(S.hp + EAT_HEAL);
-  Snd.play('pick'); Buddy.cheer(); hungerWarn = 8;
-  toast(`🍖 식량을 먹었어요 (남은 식량 ${S.c.food}개)`);
+  if(meat > 0){
+    /* 고기는 배도 더 차고 몸도 더 낫는다 */
+    S.c.meat--; S.hunger = Math.min(100, S.hunger + MEAT_FILL); refresh();
+    if(S.hp != null && S.hp < PLAYER_HP) hpSet(S.hp + MEAT_HEAL);
+    Snd.play('meatEat'); Buddy.cheer(); hungerWarn = 8;
+    toast(`🍗 고기를 구워 먹었어요 (남은 고기 ${S.c.meat}개)`);
+  } else {
+    S.c.food--; S.hunger = Math.min(100, S.hunger + 40); refresh();
+    if(S.hp != null && S.hp < PLAYER_HP) hpSet(S.hp + EAT_HEAL);
+    Snd.play('pick'); Buddy.cheer(); hungerWarn = 8;
+    toast(`🍖 식량을 먹었어요 (남은 식량 ${S.c.food}개)`);
+  }
 }
 /* 롭 패널은 글에 따라 높이가 달라진다. 배고픔 게이지가 가려지지 않게
    패널 높이를 재서 그 바로 위에 올려 둔다. (0.25초에 한 번만 잰다) */
@@ -4461,17 +4932,17 @@ function updateHunger(dt){
       if(S.starve <= 0){ S.starve = 0; gameOver('hunger'); return; }
       if(hungerWarn<=0){ hungerWarn = 4;
         const left = Math.ceil(S.starve);
-        Guide.say((S.c.food||0)>0
-          ? `🍖 <b>쓰러지기까지 ${left}초!</b> <b>${eatKeyTxt()}</b> 로 얼른 식량을 먹으세요. (식량 ${S.c.food}개)`
-          : `🍖 <b>쓰러지기까지 ${left}초!</b> 🍓 열매나 🐟 물고기를 찾으세요!`, 4);
+        Guide.say(((S.c.meat||0)+(S.c.food||0))>0
+          ? `🍖 <b>쓰러지기까지 ${left}초!</b> <b>${eatKeyTxt()}</b> 로 얼른 먹으세요. (🍗 ${S.c.meat||0} · 🍎 ${S.c.food||0})`
+          : `🍖 <b>쓰러지기까지 ${left}초!</b> 🍓 열매를 따거나 🐰 동물을 사냥하세요!`, 4);
         Snd.throttle('boarGrowl', 3000, .45); }
     } else {
       hungerMul = 1;
       S.starve = null;
       if(S.hunger<=35 && hungerWarn<=0){ hungerWarn = 18;
-        Guide.say((S.c.food||0)>0
-          ? `🍖 배가 고파지고 있어요. <b>${eatKeyTxt()}</b> 로 식량을 먹을 수 있어요.`
-          : '🍖 배가 고파지고 있어요. 🍓 열매를 찾아 두세요!', 4); }
+        Guide.say(((S.c.meat||0)+(S.c.food||0))>0
+          ? `🍖 배가 고파지고 있어요. <b>${eatKeyTxt()}</b> 로 먹을 수 있어요.`
+          : '🍖 배가 고파지고 있어요. 🍓 열매를 따거나 🐰 동물을 사냥해 두세요!', 4); }
     }
   }
   const h = Math.round(S.hunger==null?100:S.hunger);
@@ -4572,7 +5043,7 @@ function clearWorld(){
   world.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
   world = new THREE.Group(); scene.add(world);
   colliders=[]; interactables=[]; animated=[]; nidSeq=0; bulletHoles=[];
-  firePits=[]; Boars.reset();
+  firePits=[]; Boars.reset(); Animals.reset();
 }
 function ground(col){
   const g=new THREE.Mesh(new THREE.PlaneGeometry(180,180,1,1),M(col));
@@ -6579,6 +7050,7 @@ function attack(){
   const cd = it.gun ? (autoFire ? AK_CD_AUTO : AK_CD_SEMI) : (it.cd || ATK_CD_MS);
   if(now - atkAt < cd) return;
   if(it.gun){ shoot(it, now); return; }
+  if(it.tame){ atkAt = now; swingT = 0.36; tameSwing(it); return; }
   atkAt = now; swingT = 0.36;
   Snd.play(it.kill ? 'metalStir' : 'stoneMove', 1.0);
   camShake = Math.max(camShake, .32);
@@ -6591,6 +7063,14 @@ function attack(){
     if(r === 'kill'){ killed++; killN.push(b.nid); } else stunN.push(b.nid);
     hit++;
   }
+  /* 늑대와 토끼도 같은 도구로 잡는다 */
+  let meat = 0;
+  for(let i=Animals.list.length-1;i>=0;i--){
+    const a = Animals.list[i];
+    if(Math.hypot(a.x-player.x, a.z-player.z) > it.range) continue;
+    if(Animals.damage(i, it.dmg || 75) === 'kill') meat++;
+    hit++;
+  }
   for(const bs of bosses){
     if(!bs.alive || !bs.vuln) continue;
     if(Math.hypot(bs.x-player.x, bs.z-player.z) > it.range + bs.r) continue;
@@ -6598,9 +7078,13 @@ function attack(){
   }
   if(hit && Net.on && !Net.host) Net.send({t:'fx', kill:killN, stun:stunN});
   if(hit){
-    if(killed){
+    if(meat && !killed){
       Snd.play('metalSuccess', .9);
-      toast(`🟤 멧돼지 ${killed}마리를 잡았어요! 가죽을 남겼습니다`);
+      toast(`🍗 사냥에 성공했어요! 고기를 남겼습니다`);
+      Guide.cheer('🍗 사냥에 성공했어요! 사람들은 <b>동물을 잡아 고기를 먹었어요.</b>', 3.6);
+    } else if(killed){
+      Snd.play('metalSuccess', .9);
+      toast(`🟤 멧돼지 ${killed}마리를 잡았어요! 가죽과 고기를 남겼습니다`);
       Guide.cheer('🟤 멧돼지를 잡았어요! 사람들은 고기를 먹고 <b>가죽으로 옷과 집을 만들었어요.</b>', 3.6);
     } else {
       Snd.play('stoneHit', .9);
@@ -6609,6 +7093,40 @@ function attack(){
     }
   } else Snd.throttle('stoneHit', 300, .35);
 }
+/* 🦴 뼈다귀를 내민다 — 가장 가까운 늑대가 친구가 된다 */
+function tameSwing(it){
+  Snd.play('stoneMove', .7);
+  let best = -1, bd = it.range;
+  for(let i = 0; i < Animals.list.length; i++){
+    const a = Animals.list[i];
+    if(a.kind !== 'wolf' || a.tame) continue;
+    const d = Math.hypot(a.x-player.x, a.z-player.z);
+    if(d < bd){ bd = d; best = i; }
+  }
+  if(best < 0){
+    Snd.throttle('claySoft', 400, .6);
+    Guide.say('🦴 길들일 <b>늑대</b>에게 더 가까이 다가가서 뼈다귀를 내미세요. (6m 안)', 3.2);
+    return;
+  }
+  const a = Animals.list[best];
+  S.bone = Math.max(0, (S.bone||0) - 1);
+  a.tame = true; a.angry = false; a.angryT = 0; a.life = 1e9;
+  if(a.g.userData.collar) a.g.userData.collar.visible = true;
+  pickFx(a.x, 1.3, a.z, 0xff9ec4);
+  Snd.play('levelUp', .8); Buddy.cheer();
+  toast(`🐺 늑대를 길들였어요! (남은 뼈다귀 ${S.bone}개)`);
+  Guide.cheer('🐺 늑대가 친구가 되었어요! 이제 곁에서 <b>멧돼지를 대신 물리쳐</b> 줍니다.', 3.8);
+  /* 뼈다귀를 다 쓰면 손에서 내려놓는다 */
+  if(S.bone <= 0){
+    for(const o of ITEMS){ o.view.visible = false; handRest(o); }
+    equipId = null; swingT = 0; aiming = false; firing = false;
+    const ab = document.getElementById('atkBtn');
+    if(ab) ab.style.display = 'none';
+    drawAmmo();
+  }
+  drawHotbar();
+}
+
 /* 남은 총알을 화면에 보여 준다 */
 function drawAmmo(){
   const g0 = heldGun(), on = !!g0;
@@ -6755,8 +7273,25 @@ function shoot(it, now){
   }
   if(best >= 0 && !ads && Math.random() < 0.25) best = -1;  // 견착 없이 쏘면 가끔 빗나간다
 
+  /* 늑대와 토끼도 겨눈 쪽에 있으면 맞는다 */
+  let aBest = -1, ad = 1e9;
+  for(let i=0;i<Animals.list.length;i++){
+    const a = Animals.list[i];
+    const hgt = a.kind === 'wolf' ? 1.05 : .40;
+    v.set(a.x-eye.x, hgt-eye.y, a.z-eye.z);
+    const d = v.length();
+    if(d > range || d < .001) continue;
+    v.divideScalar(d);
+    const off  = Math.acos(Math.max(-1, Math.min(1, v.dot(fwd))));
+    const half = Math.atan2(a.kind === 'wolf' ? .60 : .32, d) + spread;
+    if(off > half) continue;
+    if(losBlocked(eye.x, eye.z, a.x, a.z)) continue;
+    if(d < ad){ ad = d; aBest = i; }
+  }
+  if(aBest >= 0 && !ads && Math.random() < 0.25) aBest = -1;
+
   /* 큰 적(매머드 · 뼈다귀 아저씨)도 겨눈 쪽에 있으면 맞는다 */
-  let bTarget = null, bd2 = bd;
+  let bTarget = null, bd2 = Math.min(bd, ad);
   for(const bs of bosses){
     if(!bs.alive || !bs.vuln) continue;
     v.set(bs.x-eye.x, (bs.kind==='mammoth'?3.2:1.9)-eye.y, bs.z-eye.z);
@@ -6772,6 +7307,18 @@ function shoot(it, now){
     bulletTracer(mv.x,mv.y,mv.z, bTarget.x, bTarget.kind==='mammoth'?3.2:1.9, bTarget.z);
     if(it.id === 'rpg') rpgBlast(bTarget.x, 1.5, bTarget.z);
     bossHit(bTarget, it.dmg || 150);
+    return;
+  }
+
+  /* 멧돼지보다 늑대·토끼가 앞에 있으면 그쪽이 맞는다 */
+  if(aBest >= 0 && ad < bd){
+    const a = Animals.list[aBest];
+    const hgt = a.kind === 'wolf' ? 1.05 : .40;
+    bulletTracer(mv.x,mv.y,mv.z, a.x, hgt, a.z);
+    if(it.id === 'rpg') rpgBlast(a.x, hgt, a.z);
+    Animals.damage(aBest, it.dmg || WOLF_HP);
+    Snd.play('boarHit', .7);
+    toast('🔫 명중!');
     return;
   }
 
@@ -6808,7 +7355,8 @@ function gameOver(cause){
         spiked  = (cause === 'spike');
   const title = lasered ? '💀 레이저에 당했어요!'
               : spiked  ? '🔺 가시에 찔렸어요!'
-              : starved ? '🍖 배고파서 쓰러졌어요!' : '🐗 멧돼지에게 잡혔어요!';
+              : starved ? '🍖 배고파서 쓰러졌어요!'
+              : (cause === 'wolf') ? '🐺 늑대에게 물렸어요!' : '🐗 멧돼지에게 잡혔어요!';
   Snd.play(starved ? 'claySoft' : 'boarHit'); Snd.fadeOut(0.9);
   camShake = 2.0;
   paused = true; exitLock(); hideCenter();
@@ -7380,6 +7928,7 @@ function tick(){
   /* ---- 낮과 밤 · 멧돼지 · 가이드 ---- */
   updateSky(dt);
   Boars.update(dt);
+  Animals.update(dt);
   Buddy.update(t, dt);
   Guide.update(dt);
   Net.update(dt, t);
