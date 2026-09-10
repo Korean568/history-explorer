@@ -2486,7 +2486,8 @@ function updateShield(dt){
      C 키를 누르면 카메라가 몸에서 떨어져 뒤에서 따라옵니다.
      아크리액터를 들고 누르면 갑주가 하나씩 날아와 붙습니다.
    ========================================================= */
-let thirdOn  = false;            // 3인칭인가
+let camMode  = 0;                // 0 = 1인칭 · 1 = 3인칭(뒤) · 2 = 3인칭(앞)
+let thirdOn  = false;            // 3인칭인가 (camMode 가 0 이 아니면 참)
 let bodyG    = null;             // 내 몸
 let plainParts = [], armorParts = [], bodyLegs = [], bodyArms = [];
 let coreLt   = null;
@@ -2690,14 +2691,17 @@ function toggleSuit(){
   updateAtkBtn();
 }
 
-/* 1인칭 ↔ 3인칭 */
+/* C 키 : 1인칭 → 3인칭(뒤) → 3인칭(앞) → 1인칭 … 마인크래프트처럼 돌아갑니다 */
 function toggleThird(){
   if(paused || dead) return;
-  thirdOn = !thirdOn;
+  camMode = (camMode + 1) % 3;
+  thirdOn = camMode > 0;
   const iw = equippedItem();
   if(iw) iw.view.visible = !thirdOn;
   Snd.play('pick', .7);
-  toast(thirdOn ? '🎥 3인칭 — C 키로 되돌아갑니다' : '🎥 1인칭');
+  toast(camMode === 0 ? '🎥 1인칭'
+      : camMode === 1 ? '🎥 3인칭 — 뒷모습'
+                      : '🎥 3인칭 — 앞모습');
 }
 
 /* 아이템창을 든 손 버튼(모바일)의 글씨 */
@@ -8356,6 +8360,7 @@ function netRespawn(){
   if(CAVE.on) caveLeave(false);       // 동굴 안이었다면 먼저 밖으로 나온다
   camShake = 0; speedMul = 1; dragMode = null; running = false;
   flyOn = false; shieldT = 0; player.y = 0; S.buster = false;
+  camMode = 0; thirdOn = false;
   S.hunger = Math.max(S.hunger==null?100:S.hunger, 60); S.starve = null;
   hpSet(maxHp()); hurtT = 0;
   equipId = null; swingT = 0;
@@ -8869,9 +8874,12 @@ function tick(){
     camera.updateMatrixWorld(true);
     const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
     const D = 5.4;
-    camera.position.set(player.x - fw.x*D,
-                        Math.max(.85, 1.72 + player.y - fw.y*D + .55),
-                        player.z - fw.z*D);
+    const sgn = (camMode === 2) ? -1 : 1;      // 앞에서 볼 때는 반대쪽으로 돈다
+    camera.position.set(player.x - fw.x*D*sgn,
+                        Math.max(.85, 1.72 + player.y - fw.y*D*sgn + .55),
+                        player.z - fw.z*D*sgn);
+    /* 앞에서 볼 때는 카메라가 사람을 마주 본다 */
+    if(camMode === 2) camera.lookAt(player.x, 1.72 + player.y + .10, player.z);
   } else {
     camera.position.set(player.x+Math.cos(yaw)*sway, 1.72+player.y+dip+sh, player.z-Math.sin(yaw)*sway);
     camera.rotation.set(pitch+sh*0.12, yaw, -sway*0.35);
