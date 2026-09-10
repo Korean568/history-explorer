@@ -2661,7 +2661,9 @@ function updateBody(dt, t){
        → 3 금색 얼굴판이 위에서 아래로 → 4 눈에 불 */
     const GST  = [0, .20, .44, .58, .88];      // 무리마다 시작하는 때
     const GDUR = [.30, .32, .18, .30, .12];    // 무리마다 걸리는 시간
-    const gStart = (o)=> GST[o] || 0;
+    /* 입을 때는 몸통부터, 벗을 때는 거꾸로 눈부터 */
+    const gStart = (o)=> S.suit ? (GST[o]||0)
+                                : 1 - ((GST[o]||0) + (GDUR[o]||.30));
     armorParts.forEach((m)=>{
       const o = m.userData.ord || 0;
       const st = gStart(o) + (m.userData.sub||0)*0.02;
@@ -2693,7 +2695,7 @@ function updateBody(dt, t){
                      h.z*(1 + (1-ease)*2.2) + (1-ease)*(h.x>=0?.8:-.8));
       m.scale.setScalar(0.05 + ease*0.95);
     });
-    /* 옷은 그 자리의 갑주가 덮는 순간 사라진다 */
+    /* 옷은 그 자리의 갑주가 덮는 순간 사라지고, 벗을 때는 갑주가 떠나는 순간 돌아온다 */
     plainParts.forEach(m=>{
       const st = gStart(m.userData.ord||0) + .07;
       m.visible = S.suit ? (k < st) : (k > st);
