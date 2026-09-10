@@ -2591,11 +2591,14 @@ function bodyModel(){
   const face = new THREE.Mesh(new THREE.BoxGeometry(.30,.22,.06), M(GOLD));
   face.position.set(0,-.02,.16);
   put(head, face, true, 3).userData.slideDown = true;   // 들려 있다가 아래로 덮인다
-  const visor = new THREE.Mesh(new THREE.PlaneGeometry(.22,.055),
-    new THREE.MeshBasicMaterial({color:0xcaf2ff}));
-  visor.material.transparent = true;
-  visor.position.set(0,.03,.20);
-  put(head, visor, true, 4).userData.glowIn = true;     // 마지막으로 눈에 불이 들어온다
+  /* 👁️ 눈은 둘 — 마지막으로 불이 들어온다 */
+  for(const sd of [-1,1]){
+    const ey = new THREE.Mesh(new THREE.PlaneGeometry(.085,.048),
+      new THREE.MeshBasicMaterial({color:0xcaf2ff, transparent:true}));
+    ey.position.set(.073*sd, .035, .20);
+    ey.rotation.z = -.10*sd;                            // 바깥쪽이 살짝 올라간 눈매
+    put(head, ey, true, 4).userData.glowIn = true;
+  }
   const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(RED2));
   crest.position.y = .20; put(head, crest, true, 2);
 
