@@ -2596,7 +2596,7 @@ function bodyModel(){
     const ey = new THREE.Mesh(new THREE.PlaneGeometry(.085,.048),
       new THREE.MeshBasicMaterial({color:0xcaf2ff, transparent:true}));
     ey.position.set(.073*sd, .035, .20);
-    ey.rotation.z = -.10*sd;                            // 바깥쪽이 살짝 올라간 눈매
+    ey.rotation.z = .14*sd;                             // 안쪽이 내려간 매서운 눈매
     put(head, ey, true, 4).userData.glowIn = true;
   }
   const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(RED2));
