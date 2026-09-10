@@ -2491,7 +2491,7 @@ let thirdOn  = false;            // 3인칭인가 (camMode 가 0 이 아니면 �
 let bodyG    = null;             // 내 몸
 let plainParts = [], armorParts = [], bodyLegs = [], bodyArms = [];
 let coreLt   = null;
-const SUIT_ANIM = 1.15;          // 장착에 걸리는 시간(초)
+const SUIT_ANIM = 2.65;          // 장착에 걸리는 시간(초) — 천천히 한 조각씩 붙습니다
 let   suitT  = 0;                // 남은 장착 모션 시간
 
 function bodyModel(){
@@ -2678,9 +2678,11 @@ function toggleSuit(){
   suitT = SUIT_ANIM;
   camShake = Math.max(camShake, S.suit ? 1.0 : .4);
   /* 철컥 — 부위가 하나씩 붙는 소리 */
-  const cl = [0, 160, 320, 470, 620, 780, 930];
-  cl.forEach((ms,i)=> setTimeout(()=>Snd.play(i%2 ? 'metalStir' : 'boltRelease', .75), ms));
-  setTimeout(()=>Snd.play(S.suit ? 'levelUp' : 'claySoft', .9), 980);
+  /* 철컥 소리는 장착 시간에 맞춰 골고루 퍼진다 (비율로 잡아 둡니다) */
+  const cl = [0, .09, .18, .27, .36, .45, .55, .64, .73, .82];
+  cl.forEach((f,i)=> setTimeout(()=>Snd.play(i%2 ? 'metalStir' : 'boltRelease', .75),
+                                f*SUIT_ANIM*1000));
+  setTimeout(()=>Snd.play(S.suit ? 'levelUp' : 'claySoft', .9), SUIT_ANIM*1000*.88);
   elSuitChip.style.display = S.suit ? 'block' : 'none';
   toast(S.suit ? '🦾 슈트를 장착했어요!' : '🦾 슈트를 벗었어요');
   if(S.suit){
