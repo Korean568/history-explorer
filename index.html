@@ -480,6 +480,17 @@
     background:rgba(255,255,255,.9);border:3px solid var(--bark);border-radius:14px;
     padding:7px 12px;font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px;
     transition:background .8s,color .8s,border-color .8s;}
+  /* 말로 못 부를 때 누르는 버튼 (손으로 하는 기기) */
+  #powers{position:absolute;left:50%;transform:translateX(-50%);
+    bottom:calc(112px + env(safe-area-inset-bottom));
+    display:none;gap:7px;pointer-events:auto;z-index:30;}
+  #powers button{width:60px;height:52px;border-radius:14px;padding:0;cursor:pointer;
+    background:rgba(255,255,255,.9);border:3px solid var(--bark);font-family:inherit;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:1px;font-size:19px;line-height:1;}
+  #powers button span{font-size:9.5px;font-weight:800;color:#6b4a2a;}
+  #powers button:active{transform:scale(1.08);background:rgba(242,193,78,.6);}
+
   /* 슈트를 입고 있을 때 */
   #suitChip{position:absolute;top:calc(56px + env(safe-area-inset-top));left:252px;
     background:linear-gradient(90deg,rgba(190,60,44,.92),rgba(216,166,58,.92));
@@ -632,6 +643,12 @@
   <button id="sndBtn" title="소리 켜기/끄기">🔊</button>
   <div id="clock"><span id="clockIcon">☀️</span><span id="clockTxt">낮</span><span class="bar"><i id="clockBar"></i></span></div>
   <div id="suitChip">🦾 슈트 ON</div>
+  <div id="powers">
+    <button data-p="fly">🕊️<span>fly</span></button>
+    <button data-p="shield">🛡️<span>shield</span></button>
+    <button data-p="buster">💥<span>buster</span></button>
+    <button data-p="beam">🔆<span>beam</span></button>
+  </div>
   <div id="missions"><h4>🎯 오늘의 순서</h4><ul></ul></div>
   <div id="stats">
     <div id="chips"></div>
@@ -722,7 +739,7 @@ const elEra=$('#era'), elMis=$('#missions ul'), elStats=$('#chips'), elAct=$('#a
       elGuide=$('#guide'), elGMsg=$('#gMsg'), elGArrow=$('#gArrow'),
       elGDist=$('#gDist'), elGNav=$('#gNav'), elGAvatar=$('#gAvatar'),
       elHunger=$('#hungerWrap'), elHungerBar=$('#hungerBar'), elHungerTxt=$('#hungerTxt'),
-      elSuitChip=$('#suitChip'),
+      elSuitChip=$('#suitChip'), elPowers=$('#powers'),
       elHp=$('#hpWrap'), elHpBar=$('#hpBar'), elHpTxt=$('#hpTxt'),
       elBoss=$('#boss'), elBossName=$('#bossName'), elBossFill=$('#bossFill'), elBossSub=$('#bossSub'),
       elGd=$('#gd'), elGdCv=$('#gdCv'), elGdLeft=$('#gdLeft'), elGdName=$('#gdName'),
@@ -2201,16 +2218,11 @@ const Mic = {
       }
       navigator.mediaDevices.getUserMedia({ audio:true })
         .then(st=>{
-          this.stream = st; this.ok = true;
-          try{
-            const AC = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AC();
-            const src = this.ctx.createMediaStreamSource(st);
-            this.ana = this.ctx.createAnalyser();
-            this.ana.fftSize = 512;
-            this.buf = new Uint8Array(this.ana.fftSize);
-            src.connect(this.ana);              // 스피커로는 내보내지 않는다
-          }catch(e){}
+          this.ok = true;
+          /* 허락만 받고 마이크는 곧바로 놓아 준다.
+             휴대폰·태블릿에서는 마이크를 붙들고 있으면
+             음성 인식이 마이크를 못 잡아 아무 말도 못 알아듣습니다. */
+          try{ st.getTracks().forEach(t=>t.stop()); }catch(e){}
           toast('🎤 마이크가 켜졌어요');
           Voice.start();                       // 🗣️ 이제 말로 부릴 수 있다
         })
@@ -2218,19 +2230,9 @@ const Mic = {
     }catch(e){}
   },
 
-  /* 지금 들리는 소리의 크기 (0 ~ 1). 마이크가 없으면 0 */
-  level(){
-    if(!this.ana) return 0;
-    this.ana.getByteTimeDomainData(this.buf);
-    let sum = 0;
-    for(let i=0;i<this.buf.length;i++){ const v = (this.buf[i]-128)/128; sum += v*v; }
-    return Math.min(1, Math.sqrt(sum/this.buf.length) * 4);
-  },
-
   stop(){
     try{ if(this.stream) this.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
-    try{ if(this.ctx) this.ctx.close(); }catch(e){}
-    this.stream = null; this.ctx = null; this.ana = null; this.ok = false;
+    this.stream = null; this.ok = false;
   }
 };
 
@@ -2263,8 +2265,15 @@ const Voice = {
       for(let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript + ' ';
       this.heard(txt.toLowerCase());
     };
-    r.onerror = ()=>{};
-    r.onend = ()=>{ if(this.on){ try{ r.start(); }catch(e){} } };   // 끊기면 다시 켠다
+    r.onerror = (e)=>{
+      /* not-allowed 면 아예 못 쓰는 것, 나머지(no-speech 등)는 그냥 다시 켠다 */
+      if(e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')){
+        this.on = false;
+        toast('🎤 마이크가 막혀 있어요 — 주소창 자물쇠에서 허용해 주세요');
+      }
+    };
+    /* 휴대폰에서는 한 마디 하면 저절로 끊깁니다. 끊길 때마다 다시 켭니다. */
+    r.onend = ()=>{ if(this.on) setTimeout(()=>{ try{ r.start(); }catch(e){} }, 300); };
     this.rec = r; this.on = true;
     try{ r.start(); }catch(e){ this.on = false; return; }
     toast('🗣️ 음성 명령 — "fly" · "shield" · "buster" · "beam"');
@@ -2287,7 +2296,10 @@ const Voice = {
     if(/\bbeams?\b/.test(t) || t.indexOf('빔') >= 0) this.fire('beam', voiceBeam);
   },
 
-  stop(){ this.on = false; try{ if(this.rec) this.rec.stop(); }catch(e){} }
+  stop(){ this.on = false; try{ if(this.rec) this.rec.stop(); }catch(e){} },
+
+  /* 화면을 누를 때마다 살짝 깨워 준다 (휴대폰에서 조용히 죽는 일이 있습니다) */
+  poke(){ if(this.on && this.rec){ try{ this.rec.start(); }catch(e){} } }
 };
 
 /* 🕊️ fly */
@@ -2470,6 +2482,9 @@ function updateShield(dt){
   const k = Math.max(0.01, Math.min(grow, fade));
   if(shieldFP){ shieldFP.visible = on && !thirdOn; shieldFP.scale.setScalar(.62*k); }
   if(shieldTP){ shieldTP.visible = on &&  thirdOn; shieldTP.scale.setScalar(.60*k); }
+
+  /* 아크리액터를 얻었고 손으로 하는 기기라면, 누를 수 있는 버튼을 보여 준다 */
+  elPowers.style.display = (usingTouch && S.arc && !paused && !dead) ? 'flex' : 'none';
 
   /* 지금 켜져 있는 것들을 화면 위에 알려 준다 */
   const chips = [];
@@ -8731,7 +8746,10 @@ document.getElementById('chatSend').addEventListener('click', e=>{
   elChatIn.blur();                       // 보내고 나면 바로 움직일 수 있게
 });
 /* 화면을 누르면 채팅칸에서 손을 뗀다 (글쓰기 때문에 못 움직이는 일이 없게) */
-cv.addEventListener('pointerdown', ()=>{ if(document.activeElement===elChatIn) elChatIn.blur(); });
+cv.addEventListener('pointerdown', ()=>{
+  if(document.activeElement===elChatIn) elChatIn.blur();
+  Voice.poke();                      // 조용히 죽어 있었으면 다시 깨운다
+});
 
 /* 🏃 달리기 버튼 : 누르고 있는 동안만 달린다 */
 const runBtn=document.getElementById('runBtn');
@@ -8744,6 +8762,18 @@ runBtn.addEventListener('pointercancel',runOff);
 runBtn.addEventListener('pointerleave',runOff);
 
 /* ⚔️ 공격 버튼 (동검을 들고 있을 때만 나타난다) */
+/* 힘 버튼 : 말로 하는 것과 똑같이 움직입니다 */
+document.querySelectorAll('#powers button').forEach(bt=>{
+  bt.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation(); Snd.resume();
+    const p = bt.dataset.p;
+    if(p === 'fly') voiceFly();
+    else if(p === 'shield') voiceShield();
+    else if(p === 'buster') voiceBuster();
+    else if(p === 'beam') voiceBeam();
+  });
+});
+
 const atkBtn=document.getElementById('atkBtn');
 atkBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); Snd.resume(); attack(); firing = true; });
 ['pointerup','pointercancel','pointerleave'].forEach(ev=>
