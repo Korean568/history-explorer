@@ -2503,7 +2503,7 @@ function bodyModel(){
 
   /* 살 / 갑주를 한 자리에 겹쳐 두고, 보이는 쪽만 바꿉니다.
      ord = 붙는 차례 : 0 몸통 · 1 팔다리 · 2 머리(빨강) · 3 머리(금색) */
-  const ordN = [0,0,0,0];
+  const ordN = [0,0,0,0,0];
   const put = (parent, mesh, armor, ord)=>{
     parent.add(mesh);
     mesh.userData.home = { x:mesh.position.x, y:mesh.position.y, z:mesh.position.z };
@@ -2589,11 +2589,14 @@ function bodyModel(){
   const helm = new THREE.Mesh(new THREE.BoxGeometry(.36,.38,.34), M(RED2));
   put(head, helm, true, 2);          // 머리 : 빨간 껍데기가 먼저
   const face = new THREE.Mesh(new THREE.BoxGeometry(.30,.22,.06), M(GOLD));
-  face.position.set(0,-.02,.16); put(head, face, true, 3);   // 금색 얼굴판이 마지막
+  face.position.set(0,-.02,.16);
+  put(head, face, true, 3).userData.slideDown = true;   // 들려 있다가 아래로 덮인다
   const visor = new THREE.Mesh(new THREE.PlaneGeometry(.22,.055),
     new THREE.MeshBasicMaterial({color:0xcaf2ff}));
-  visor.position.set(0,.03,.20); put(head, visor, true, 3);
-  const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(STEEL));
+  visor.material.transparent = true;
+  visor.position.set(0,.03,.20);
+  put(head, visor, true, 4).userData.glowIn = true;     // 마지막으로 눈에 불이 들어온다
+  const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(RED2));
   crest.position.y = .20; put(head, crest, true, 2);
 
   /* ── 💥 버스터 : 더 두껍고 큰 덧갑주 ── */
@@ -2635,15 +2638,38 @@ function updateBody(dt, t){
   if(suitT > 0){
     suitT = Math.max(0, suitT - dt);
     const k = 1 - suitT/SUIT_ANIM;                 // 0 → 1
-    /* 붙는 차례 : 몸통 → 팔·다리 → 머리(빨강) → 머리(금색) */
-    const gStart = (o)=> o*0.22;
+    /* 붙는 차례
+       0 몸통 → 1 팔·다리 → 2 머리(빨간 껍데기)
+       → 3 금색 얼굴판이 위에서 아래로 → 4 눈에 불 */
+    const GST  = [0, .20, .44, .58, .88];      // 무리마다 시작하는 때
+    const GDUR = [.30, .32, .18, .30, .12];    // 무리마다 걸리는 시간
+    const gStart = (o)=> GST[o] || 0;
     armorParts.forEach((m)=>{
-      const st = gStart(m.userData.ord||0) + (m.userData.sub||0)*0.022;
-      let a = (k - st)/0.30; a = Math.max(0, Math.min(1, a));
+      const o = m.userData.ord || 0;
+      const st = gStart(o) + (m.userData.sub||0)*0.02;
+      let a = (k - st)/(GDUR[o] || .30); a = Math.max(0, Math.min(1, a));
       const e = S.suit ? a : 1-a;
-      const ease = 1 - Math.pow(1-e, 3);
       const h = m.userData.home;
       m.visible = e > 0.001;
+
+      if(m.userData.glowIn){
+        /* 👁️ 눈 : 그 자리에서 서서히 밝아진다 */
+        m.material.opacity = e;
+        m.scale.setScalar(1);
+        m.position.set(h.x, h.y, h.z);
+        return;
+      }
+      if(m.userData.slideDown){
+        /* 🟡 얼굴판 : 잠깐 들려 있다가 아래로 내려와 덮인다 */
+        const hold = 0.42;                                  // 처음엔 들린 채로 멈춰 있다
+        const q = Math.max(0, (e - hold)/(1 - hold));
+        const dn = 1 - Math.pow(1-q, 3);
+        m.scale.setScalar(1);
+        m.position.set(h.x, h.y + (1-dn)*0.40, h.z + (1-dn)*0.05);
+        m.rotation.x = -(1-dn)*1.0;
+        return;
+      }
+      const ease = 1 - Math.pow(1-e, 3);
       m.position.set(h.x*(1 + (1-ease)*2.2),
                      h.y + (1-ease)*1.5,
                      h.z*(1 + (1-ease)*2.2) + (1-ease)*(h.x>=0?.8:-.8));
@@ -2656,7 +2682,9 @@ function updateBody(dt, t){
     });
     if(suitT <= 0){
       armorParts.forEach(m=>{ const h=m.userData.home;
-        m.position.set(h.x,h.y,h.z); m.scale.setScalar(1); m.visible = !!S.suit; });
+        m.position.set(h.x,h.y,h.z); m.scale.setScalar(1); m.visible = !!S.suit;
+        if(m.userData.slideDown) m.rotation.x = 0;
+        if(m.userData.glowIn) m.material.opacity = 1; });
       plainParts.forEach(m=> m.visible = !S.suit);
     }
   }
