@@ -2601,10 +2601,11 @@ function bodyModel(){
     const eye = new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.02), M(0x2a2320));
     eye.position.set(.075*sd,.02,.16); put(head, eye, false, 2);
   }
-  /* 머리 : 약간 동그란 빨간 투구 (가로·앞뒤를 조금 눌러 둔 공) */
-  const HR = .205, HSX = .90;
-  const helm = new THREE.Mesh(new THREE.SphereGeometry(HR, 18, 14).scale(HSX, 1, HSX), M(RED2));
-  put(head, helm, true, 2);          // 머리 : 빨간 껍데기가 먼저
+  /* 머리 : 동그란 빨간 투구.
+     완전한 공이라, 얼굴판을 가운데를 축으로 돌려도 늘 껍데기 바깥에 머문다 (파고들지 않는다) */
+  const HR = .240, HSX = 1;          // 투구 반지름 (사람 얼굴보다 넉넉하게 크다)
+  const HUP = .035;                   // 투구를 조금 올려 어깨에 파묻히지 않게
+  const FACE_R = .181;                // 투구 속 사람 얼굴의 반지름 — 투구 크기와 상관없이 그대로
   /* 🟡 얼굴판 그림 : 500×250 그림에서 얼굴판이 있는 곳만 잘라 붙인다
      (파일이 없으면 금색 판으로 대신합니다) */
   const fpMat = (url, extra)=>{
@@ -2624,14 +2625,42 @@ function bodyModel(){
   const fpGeo = (r)=> new THREE.SphereGeometry(r, 20, 14,
                         Math.PI/2 - FPA/2, FPA,          // 정면(+z)을 가운데로
                         Math.PI/2 - FPV/2, FPV).scale(HSX, 1, HSX);
+
+  /* 빨간 투구 : 얼굴판 자리에 창이 뚫린 껍데기.
+     얼굴판이 들려 있는 동안에는 창으로 사람 얼굴이 보인다. */
+  const WA = FPA - .08, WV = FPV - .08;                   // 창 크기 (얼굴판보다 조금 작게)
+  const P2 = Math.PI/2;
+  const shell = (ps, pl, ts, tl, r, col)=>{
+    const mt = M(col); mt.side = THREE.DoubleSide;
+    return new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14, ps, pl, ts, tl).scale(HSX, 1, HSX), mt);
+  };
+  const helm = new THREE.Group();
+  helm.add(shell(P2 + WA/2, Math.PI*2 - WA, 0, Math.PI, HR, RED2));        // 뒤 · 옆
+  helm.add(shell(P2 - WA/2, WA, 0, P2 - WV/2, HR, RED2));                  // 창 위 (정수리)
+  helm.add(shell(P2 - WA/2, WA, P2 + WV/2, P2 - WV/2, HR, RED2));          // 창 아래 (턱)
+  helm.position.y = HUP;
+  put(head, helm, true, 2);          // 머리 : 빨간 껍데기가 먼저
+
+  /* 투구 속 사람 얼굴 — 크기는 그대로, 투구 창으로 보인다 */
+  const faceIn = new THREE.Group();
+  faceIn.add(shell(P2 - WA/2, WA, P2 - WV/2, WV, FACE_R, SKIN));
+  for(const sd of [-1,1]){                                                  // 눈
+    const ey = new THREE.Mesh(new THREE.BoxGeometry(.042,.030,.012), M(0x2a2320));
+    ey.position.set(.054*sd, .012, .174); ey.rotation.y = .30*sd; faceIn.add(ey);
+  }
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(.06,.011,.010), M(0x7a3b2e));
+  mouth.position.set(0, -.070, .168); faceIn.add(mouth);
+  put(head, faceIn, true, 2);
   /* 눈이 꺼진 얼굴판 — 이마 위로 젖혀져 있다가 내려와 덮인다 */
   const face = new THREE.Mesh(fpGeo(HR + .006),
     fpMat('img/faceplate_7340.png', { alphaTest:.15 }));
+  face.position.y = HUP;
   put(head, face, true, 3).userData.slideDown = true;
   face.userData.hinge = true;                             // 머리 가운데를 축으로 돈다
   /* 👁️ 눈에 불이 켜진 얼굴판 — 같은 자리에 겹쳐 두고 마지막에 서서히 밝힌다 */
   const lit = new THREE.Mesh(fpGeo(HR + .010),
     fpMat('img/faceplate_7496.png', { opacity:0, depthWrite:false }));
+  lit.position.y = HUP;
   put(head, lit, true, 4).userData.glowIn = true;
 
   /* ── 💥 버스터 : 더 두껍고 큰 덧갑주 ── */
@@ -2705,7 +2734,7 @@ function updateBody(dt, t){
         if(m.userData.hinge){
           /* 머리 가운데가 경첩 — 이마 위로 젖혀져 있다가 앞으로 덮인다 */
           m.position.set(h.x, h.y, h.z);
-          m.rotation.x = -(1-dn)*1.35;
+          m.rotation.x = -(1-dn)*1.05;
         } else {
           m.position.set(h.x, h.y + (1-dn)*0.40, h.z + (1-dn)*0.05);
           m.rotation.x = -(1-dn)*1.0;
