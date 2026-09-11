@@ -2732,9 +2732,12 @@ function updateBody(dt, t){
         const dn = 1 - Math.pow(1-q, 3);
         m.scale.setScalar(1);
         if(m.userData.hinge){
-          /* 머리 가운데가 경첩 — 이마 위로 젖혀져 있다가 앞으로 덮인다 */
+          /* 머리 가운데가 경첩 — 이마 위로 젖혀져 있다가 앞으로 덮인다.
+             들려 있는 동안은 투구 껍데기 안쪽으로 조금 들어가, 꼭대기를 넘은 부분이
+             껍데기에 가려진다 (창으로 보이는 아랫부분만 남는다) */
           m.position.set(h.x, h.y, h.z);
           m.rotation.x = -(1-dn)*1.05;
+          m.scale.setScalar(1 - (1-dn)*0.075);
         } else {
           m.position.set(h.x, h.y + (1-dn)*0.40, h.z + (1-dn)*0.05);
           m.rotation.x = -(1-dn)*1.0;
