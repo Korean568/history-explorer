@@ -2603,17 +2603,29 @@ function bodyModel(){
   }
   const helm = new THREE.Mesh(new THREE.BoxGeometry(.36,.38,.34), M(RED2));
   put(head, helm, true, 2);          // 머리 : 빨간 껍데기가 먼저
-  const face = new THREE.Mesh(new THREE.BoxGeometry(.30,.22,.06), M(GOLD));
-  face.position.set(0,-.02,.16);
-  put(head, face, true, 3).userData.slideDown = true;   // 들려 있다가 아래로 덮인다
-  /* 👁️ 눈은 둘 — 마지막으로 불이 들어온다 */
-  for(const sd of [-1,1]){
-    const ey = new THREE.Mesh(new THREE.PlaneGeometry(.085,.048),
-      new THREE.MeshBasicMaterial({color:0xcaf2ff, transparent:true}));
-    ey.position.set(.073*sd, .035, .20);
-    ey.rotation.z = .14*sd;                             // 안쪽이 내려간 매서운 눈매
-    put(head, ey, true, 4).userData.glowIn = true;
-  }
+  /* 🟡 얼굴판 그림 : 500×250 그림에서 얼굴판이 있는 곳만 잘라 붙인다
+     (파일이 없으면 금색 판으로 대신합니다) */
+  const fpMat = (url, extra)=>{
+    const m = new THREE.MeshBasicMaterial(Object.assign(
+      { color:GOLD, transparent:true, side:THREE.DoubleSide }, extra));
+    try{
+      new THREE.TextureLoader().load(url, (t)=>{
+        t.offset.set(.316, .216); t.repeat.set(.312, .776);   // 얼굴판 둘레만
+        m.map = t; m.color.setHex(0xffffff); m.needsUpdate = true;
+      }, undefined, ()=>{});
+    }catch(e){}
+    return m;
+  };
+  /* 눈이 꺼진 얼굴판 — 위에서 아래로 내려와 덮인다 */
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(.33,.41),
+    fpMat('img/faceplate_7340.png', { alphaTest:.15 }));
+  face.position.set(0,-.02,.178);
+  put(head, face, true, 3).userData.slideDown = true;
+  /* 👁️ 눈에 불이 켜진 얼굴판 — 같은 자리에 겹쳐 두고 마지막에 서서히 밝힌다 */
+  const lit = new THREE.Mesh(new THREE.PlaneGeometry(.33,.41),
+    fpMat('img/faceplate_7496.png', { opacity:0, depthWrite:false }));
+  lit.position.set(0,-.02,.181);
+  put(head, lit, true, 4).userData.glowIn = true;
   const crest = new THREE.Mesh(new THREE.BoxGeometry(.38,.08,.36), M(RED2));
   crest.position.y = .20; put(head, crest, true, 2);
 
