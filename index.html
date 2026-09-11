@@ -2594,18 +2594,20 @@ function bodyModel(){
   /* ── 머리 ── */
   const head = new THREE.Group(); head.position.y = 1.62; g.add(head);
   const skull = new THREE.Mesh(new THREE.BoxGeometry(.32,.34,.30), M(SKIN));
-  put(head, skull, false, 2);
+  put(head, skull, false, 2).userData.keep = true;   // 슈트를 입어도 그대로 (투구 속에 있다)
   const hair = new THREE.Mesh(new THREE.BoxGeometry(.35,.13,.33), M(HAIR));
-  hair.position.y = .18; put(head, hair, false, 2);
+  hair.position.y = .18; put(head, hair, false, 2).userData.keep = true;
   for(const sd of [-1,1]){
     const eye = new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.02), M(0x2a2320));
-    eye.position.set(.075*sd,.02,.16); put(head, eye, false, 2);
+    eye.position.set(.075*sd,.02,.16); put(head, eye, false, 2).userData.keep = true;
   }
   /* 머리 : 동그란 빨간 투구.
      완전한 공이라, 얼굴판을 가운데를 축으로 돌려도 늘 껍데기 바깥에 머문다 (파고들지 않는다) */
-  const HR = .240, HSX = 1;          // 투구 반지름 (사람 얼굴보다 넉넉하게 크다)
-  const HUP = .035;                   // 투구를 조금 올려 어깨에 파묻히지 않게
-  const FACE_R = .181;                // 투구 속 사람 얼굴의 반지름 — 투구 크기와 상관없이 그대로
+  /* 투구는 네모난 머리가 통째로 들어가는 크기.
+     머리 가운데(높이 .0375)에서 가장 먼 머리카락 모서리까지가 약 .318 이라,
+     반지름 .335 면 모서리가 껍데기를 뚫고 나오지 않는다. */
+  const HR = .335, HSX = 1;
+  const HUP = .0375;                  // 투구 가운데 = 네모난 머리의 가운데
   /* 🟡 얼굴판 그림 : 500×250 그림에서 얼굴판이 있는 곳만 잘라 붙인다
      (파일이 없으면 금색 판으로 대신합니다) */
   const fpMat = (url, extra)=>{
@@ -2641,20 +2643,15 @@ function bodyModel(){
   helm.position.y = HUP;
   put(head, helm, true, 2);          // 머리 : 빨간 껍데기가 먼저
 
-  /* 투구 속 사람 얼굴 — 크기는 그대로, 투구 창으로 보인다 */
-  const faceIn = new THREE.Group();
-  faceIn.add(shell(P2 - WA/2, WA, P2 - WV/2, WV, FACE_R, SKIN));
-  for(const sd of [-1,1]){                                                  // 눈
-    const ey = new THREE.Mesh(new THREE.BoxGeometry(.042,.030,.012), M(0x2a2320));
-    ey.position.set(.054*sd, .012, .174); ey.rotation.y = .30*sd; faceIn.add(ey);
-  }
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(.06,.011,.010), M(0x7a3b2e));
-  mouth.position.set(0, -.070, .168); faceIn.add(mouth);
-  put(head, faceIn, true, 2);
+  /* 투구 속에는 원래의 네모난 머리가 그대로 들어 있다 (창으로 보인다) */
   /* 눈이 꺼진 얼굴판 — 이마 위로 젖혀져 있다가 내려와 덮인다 */
   const face = new THREE.Mesh(fpGeo(HR + .006),
     fpMat('img/faceplate_7340.png', { alphaTest:.15 }));
   face.position.y = HUP;
+  /* 얼굴판 뒤를 받치는 빨간 판 — 그림의 투명한 가장자리로 속(살갗)이 비치지 않게.
+     얼굴판의 자식이라 함께 들리고 함께 덮인다 (들리면 얼굴은 그대로 보인다) */
+  const fpBackMat = M(RED2); fpBackMat.side = THREE.DoubleSide;
+  face.add(new THREE.Mesh(fpGeo(HR + .003), fpBackMat));
   put(head, face, true, 3).userData.slideDown = true;
   face.userData.hinge = true;                             // 머리 가운데를 축으로 돈다
   /* 👁️ 눈에 불이 켜진 얼굴판 — 같은 자리에 겹쳐 두고 마지막에 서서히 밝힌다 */
@@ -2737,7 +2734,7 @@ function updateBody(dt, t){
              껍데기에 가려진다 (창으로 보이는 아랫부분만 남는다) */
           m.position.set(h.x, h.y, h.z);
           m.rotation.x = -(1-dn)*1.05;
-          m.scale.setScalar(1 - (1-dn)*0.075);
+          m.scale.setScalar(1 - (1-dn)*0.041);    // .341 → .327 : 껍데기(.335) 안, 머리(.318) 밖
         } else {
           m.position.set(h.x, h.y + (1-dn)*0.40, h.z + (1-dn)*0.05);
           m.rotation.x = -(1-dn)*1.0;
@@ -2752,6 +2749,7 @@ function updateBody(dt, t){
     });
     /* 옷은 그 자리의 갑주가 덮는 순간 사라지고, 벗을 때는 갑주가 떠나는 순간 돌아온다 */
     plainParts.forEach(m=>{
+      if(m.userData.keep){ m.visible = true; return; }
       const st = gStart(m.userData.ord||0) + .07;
       m.visible = S.suit ? (k < st) : (k > st);
     });
@@ -2760,7 +2758,7 @@ function updateBody(dt, t){
         m.position.set(h.x,h.y,h.z); m.scale.setScalar(1); m.visible = !!S.suit;
         if(m.userData.slideDown) m.rotation.x = 0;
         if(m.userData.glowIn) m.material.opacity = 1; });
-      plainParts.forEach(m=> m.visible = !S.suit);
+      plainParts.forEach(m=> m.visible = m.userData.keep ? true : !S.suit);
     }
   }
   if(coreLt) coreLt.intensity = S.suit ? (1.4 + Math.sin(t*3)*0.25) : 0;
