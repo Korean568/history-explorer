@@ -254,8 +254,9 @@ wss.on('connection', (ws) => {
         me.mov = +m.mov || 0;
         me.y = +m.y || 0;                 // 날고 있으면 떠 있는 높이
         me.suit = m.suit ? 1 : 0;         // 슈트를 입었는가
+        me.cave = m.cave ? 1 : 0;         // 동굴 안인가
         broadcast(room, { t:'pos', id:me.id, x:me.x, y:me.y, z:me.z,
-                          yaw:me.yaw, mov:me.mov, suit:me.suit }, me.id);
+                          yaw:me.yaw, mov:me.mov, suit:me.suit, cave:me.cave }, me.id);
         break;
 
       /* ---------- 채집물 · 제작소를 사용했다 ---------- */
@@ -297,17 +298,29 @@ wss.on('connection', (ws) => {
         broadcast(room, { t:'boars', list: room.boars }, me.id);
         break;
 
+      /* ---------- 늑대와 토끼 (호스트가 알려 준다) ---------- */
+      case 'animals':
+        if (!isHost) break;
+        room.animals = Array.isArray(m.list) ? m.list.slice(0, 16) : [];
+        broadcast(room, { t:'animals', list: room.animals }, me.id);
+        break;
+
       /* ---------- 공격 결과를 호스트에게 알린다 ---------- */
       case 'fx': {
         const host = room.players.get(room.hostId);
-        if (host) send(host.ws, { t:'fx', by: me.id, kill: m.kill || [], stun: m.stun || [] });
+        if (host) send(host.ws, { t:'fx', by: me.id,
+                                  kill: m.kill || [], stun: m.stun || [],
+                                  hit:  m.hit  || [],        // 멧돼지에게 준 피해
+                                  ahit: m.ahit || [],        // 늑대·토끼에게 준 피해
+                                  tame: m.tame || [] });     // 길들인 늑대
         break;
       }
 
       /* ---------- 죽음 / 부활 ---------- */
       case 'died':
         me.dead = true;
-        broadcast(room, { t:'died', id: me.id, name: me.name });
+        broadcast(room, { t:'died', id: me.id, name: me.name,
+                          cause: String(m.cause || 'boar').slice(0, 12) });
         break;
       case 'respawn':
         me.dead = false;

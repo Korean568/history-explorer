@@ -1569,6 +1569,7 @@ const Boars = {
   /* 돌도구에 맞아 기절한다 */
   stun(i){
     const b=this.list[i];
+    if(Net.on && !Net.host && !CAVE.on) Net.send({t:'fx', stun:[b.nid]});
     b.stun = STUN_SEC; b.state='stun';
     pickFx(b.x, 1.5, b.z, 0xffe27a);
     this.addStunFx(b);
@@ -1578,6 +1579,14 @@ const Boars = {
   damage(i, amount){
     const b = this.list[i];
     if(!b) return null;
+    /* 손님은 스스로 판정하지 않는다 — 방장에게 알리고 맞는 시늉만 한다.
+       (그래야 둘이 같이 때려도 체력이 어긋나지 않는다) */
+    if(Net.on && !Net.host && !CAVE.on){
+      Net.send({t:'fx', hit:[[b.nid, amount]]});
+      pickFx(b.x, 1.2, b.z, 0xd4423f);
+      Snd.play('boarHit', .7);
+      return 'hit';
+    }
     b.hp = (b.hp==null ? BOAR_HP : b.hp) - amount;
     if(b.hp <= 0){ this.kill(i, true); return 'kill'; }
     pickFx(b.x, 1.2, b.z, 0xd4423f);
@@ -1963,6 +1972,12 @@ const Animals = {
   damage(i, amount){
     const a = this.list[i];
     if(!a) return null;
+    if(Net.on && !Net.host && !CAVE.on){        // 손님은 방장에게 알리기만 한다
+      Net.send({t:'fx', ahit:[[a.nid, amount]]});
+      pickFx(a.x, a.kind === 'wolf' ? 1.1 : .5, a.z, 0xd4423f);
+      Snd.play(a.kind === 'wolf' ? 'wolfGrowl' : 'rabbitSqueak', .8);
+      return 'hit';
+    }
     a.hp -= amount;
     if(a.hp <= 0){ this.kill(i, true); return 'kill'; }
     pickFx(a.x, a.kind === 'wolf' ? 1.1 : .5, a.z, 0xd4423f);
@@ -1970,6 +1985,60 @@ const Animals = {
     if(a.kind === 'rabbit') a.restT = 0;          // 놀라서 달아난다
     else this.anger(a);                           // 늑대는 건드리면 화를 낸다
     return 'hit';
+  },
+
+  /* 손님 : 방장이 알려 준 자리로 부드럽게 따라간다 */
+  follow(dt){
+    for(const a of this.list){
+      a.grow = Math.min(1, a.grow + dt*2.2);
+      a.g.scale.setScalar(a.grow * (a.kind === 'wolf' ? 1 : .9));
+      const k = Math.min(1, dt*11);
+      a.x += ((a.tx==null?a.x:a.tx) - a.x)*k;
+      a.z += ((a.tz==null?a.z:a.tz) - a.z)*k;
+      let dd = (a.tdir==null?a.dir:a.tdir) - a.dir;
+      while(dd >  Math.PI) dd -= TAU;
+      while(dd < -Math.PI) dd += TAU;
+      a.dir += dd*k;
+      a.phase += dt*6;
+      const LG = a.g.userData.legs, sw = Math.sin(a.phase)*.6;
+      LG[0].rotation.x =  sw; LG[3].rotation.x =  sw;
+      LG[1].rotation.x = -sw; LG[2].rotation.x = -sw;
+      a.g.rotation.set(0, a.dir, 0);
+      a.g.position.set(a.x, 0, a.z);
+      if(a.kind === 'wolf'){
+        const ec = a.angry ? 0xff4a2a : (Sky.night > .35 ? 0xffe27a : 0xc9a24a);
+        for(const e of a.g.userData.eyes) e.material.color.setHex(ec);
+        if(a.g.userData.collar) a.g.userData.collar.visible = !!a.tame;
+        a.hitCd = Math.max(0, a.hitCd - dt);
+        const d = Math.hypot(player.x-a.x, player.z-a.z);
+        if(a.angry && !a.tame && d < 1.6 && !dead && !airborne() && a.hitCd <= 0){
+          a.hitCd = WOLF_HIT_CD; Snd.play('wolfBite', .9);
+          hurt(WOLF_DMG, false, 'wolf');
+        }
+      }
+    }
+  },
+
+  /* 방장이 알려 준 목록에 맞춘다 */
+  sync(list){
+    const seen = new Set();
+    for(const e of list){
+      seen.add(e.n);
+      let a = this.list.find(x=>x.nid===e.n);
+      if(!a){
+        const g = (e.k === 'wolf') ? wolfModel() : rabbitModel();
+        g.userData.noHole = true; world.add(g);
+        g.position.set(e.x, 0, e.z); g.scale.setScalar(.3);
+        a = { nid:e.n, kind:e.k, g, x:e.x, z:e.z, dir:e.d, phase:Math.random()*TAU,
+              hp:1e9, grow:.3, hitCd:0, hop:0, restT:0, wx:e.x, wz:e.z,
+              tame:false, angry:false, angryT:0, life:1e9, speed:0 };
+        this.list.push(a);
+      }
+      a.tx = e.x; a.tz = e.z; a.tdir = e.d; a.angry = !!e.a; a.tame = !!e.t;
+    }
+    for(let i=this.list.length-1;i>=0;i--){
+      if(!seen.has(this.list[i].nid)){ world.remove(this.list[i].g); this.list.splice(i,1); }
+    }
   },
 
   /* 건드린 늑대와 가까이 있던 무리가 함께 달려든다 */
@@ -2002,6 +2071,9 @@ const Animals = {
   update(dt){
     if(CAVE.on){ if(this.list.length) this.clear(); return; }
     this.T = (this.T || 0) + dt;
+
+    /* 손님은 스스로 부르거나 움직이지 않는다 — 방장이 알려 준 대로만 따라간다 */
+    if(Net.on && !Net.host){ this.follow(dt); return; }
 
     /* ---- 나타나기 : 늑대와 토끼는 밝은 낮에 돌아다닌다 ---- */
     if(!paused && !dead){
@@ -3889,20 +3961,33 @@ const Net = {
       case 'left':   this.removePlayer(m.id);  this.drawParty(); break;
       case 'host':
         this.host = (m.id === this.id);
-        if(this.host){ Boars.list.length = 0; toast('👑 이제 내가 방장이에요'); }
+        if(this.host){
+          /* 손님일 때 서버가 보내 주던 멧돼지를 치운다 — 모형까지 지워야
+             얼어붙은 멧돼지가 맵에 남지 않는다 */
+          const wipe = (list, w)=>{ if(!list || !w) return;
+            for(const b of list) w.remove(b.g); list.length = 0; };
+          if(CAVE.on && CAVE.keep) wipe(CAVE.keep.boars, CAVE.keep.world);
+          else wipe(Boars.list, world);
+          toast('👑 이제 내가 방장이에요');
+        }
         mpStartBtn();
         break;
 
       case 'pos': {
         const p = this.players.get(m.id); if(!p) break;
         p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov;
-        p.suit = !!m.suit; p.y = +m.y || 0;
+        p.suit = !!m.suit; p.y = +m.y || 0; p.cave = !!m.cave;
         break;
       }
       case 'died': {
         const p = this.players.get(m.id);
         if(p){ p.dead = true; }
-        if(m.id !== this.id) toast(`💀 ${m.name} 님이 멧돼지에게 잡혔어요`);
+        if(m.id !== this.id){
+          const how = { boar:'멧돼지에게 잡혔어요', wolf:'늑대에게 물렸어요',
+                        seek:'시크에게 붙잡혔어요', hunger:'배고파서 쓰러졌어요',
+                        spike:'가시에 찔렸어요',   laser:'레이저에 당했어요' };
+          toast(`💀 ${m.name} 님이 ${how[m.cause] || '쓰러졌어요'}`);
+        }
         this.drawParty();
         break;
       }
@@ -3930,6 +4015,10 @@ const Net = {
 
       case 'boars':
         if(!this.host && !CAVE.on) netApplyBoars(m.list);
+        break;
+
+      case 'animals':
+        if(!this.host && !CAVE.on) Animals.sync(m.list);
         break;
 
       case 'fx':
@@ -3994,11 +4083,11 @@ const Net = {
     this.posAcc += dt;
     if(this.posAcc > 1/15){
       this.posAcc = 0;
-      if(!CAVE.on)                                  // 동굴 안에서는 자리를 알리지 않는다
-        this.send({t:'pos', x:+player.x.toFixed(2), z:+player.z.toFixed(2),
-                   yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0),
-                   y: +player.y.toFixed(2),         // 🕊️ 날고 있으면 떠 있는 높이
-                   suit: S.suit ? 1 : 0});          // 🦾 슈트를 입었는지도
+      this.send({t:'pos', x:+player.x.toFixed(2), z:+player.z.toFixed(2),
+                 yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0),
+                 y: +player.y.toFixed(2),           // 🕊️ 날고 있으면 떠 있는 높이
+                 suit: S.suit ? 1 : 0,              // 🦾 슈트를 입었는지도
+                 cave: CAVE.on ? 1 : 0});           // 🕳️ 동굴 안이면 모습을 감춘다
     }
     /* 공유 자원이 바뀌었으면 알리기 */
     this.shareAcc += dt;
@@ -4009,9 +4098,13 @@ const Net = {
       this.boarAcc += dt;
       if(this.boarAcc > 0.1){
         this.boarAcc = 0;
+        this.send({t:'animals', list: Animals.list.map(a=>({
+          n:a.nid, k:a.kind, x:+a.x.toFixed(2), z:+a.z.toFixed(2),
+          d:+a.dir.toFixed(2), a:a.angry?1:0, t:a.tame?1:0 }))});
         this.send({t:'boars', list: Boars.list.map(b=>({
           n:b.nid, x:+b.x.toFixed(2), z:+b.z.toFixed(2),
-          d:+b.dir.toFixed(2), s:b.state, u:+(b.stun||0).toFixed(1) }))});
+          d:+b.dir.toFixed(2), s:b.state, u:+(b.stun||0).toFixed(1),
+          h:Math.max(0, Math.round(b.hp==null?BOAR_HP:b.hp)) }))});
       }
     }
 
@@ -4026,7 +4119,7 @@ const Net = {
       p.cy = (p.cy||0) + ((p.y||0) - (p.cy||0))*k;
       p.g.position.set(p.cx, p.cy, p.cz);
       p.g.rotation.y = p.cyaw + Math.PI;          // 아바타는 +Z 를 보고 서 있다
-      p.g.visible = !p.dead;
+      p.g.visible = !p.dead && !p.cave;        // 동굴에 들어간 사람은 밖에서 안 보인다
       const u = p.g.userData;
       u.phase += dt * (p.mov ? 7 : 0);
       const sw = Math.sin(u.phase) * (p.mov ? .6 : 0);
@@ -5062,6 +5155,11 @@ function caveLeave(won){
   elBoss.style.display = 'none';
   if(Net.on){ Net.send({t:'chat', msg:'🚪 동굴에서 나왔어!'}); Chat.system('🚪 동굴에서 나왔습니다'); }
   Sky.p = -1;                                   // 바깥 밝기를 다시 계산하게 한다
+  /* 동굴에 있는 동안 남이 한 일을 이제야 반영한다 */
+  if(netLater.length){
+    const q = netLater; netLater = [];
+    for(const n of q) netRemoteAct(n);
+  }
   if(won) centerMsg('<h2>🚀 RPG 를 얻었습니다!</h2>'+
     '<p>아이템창에서 들 수 있어요. 한 발에 <b>1972</b>.</p>', 5000);
 }
@@ -8170,6 +8268,7 @@ function netApplyBoars(list){
       Boars.list.push(b);
     }
     b.tx=e.x; b.tz=e.z; b.tdir=e.d; b.state=e.s; b.stun=e.u||0;
+    if(e.h != null) b.hp = e.h;                 // 체력은 방장 것이 진짜
   }
   for(let i=Boars.list.length-1;i>=0;i--){
     const b=Boars.list[i];
@@ -8178,6 +8277,32 @@ function netApplyBoars(list){
 }
 /* 다른 사람의 공격을 방장이 실제로 적용한다 */
 function netApplyFx(m){
+  /* 손님이 준 피해를 방장이 실제로 적용한다 */
+  if(!CAVE.on){
+    for(const [n, d] of (m.hit||[])){
+      const i = Boars.list.findIndex(b=>b.nid===n);
+      if(i>=0) Boars.damage(i, d);
+    }
+    for(const [n, d] of (m.ahit||[])){
+      const i = Animals.list.findIndex(a=>a.nid===n);
+      if(i>=0) Animals.damage(i, d);
+    }
+    for(const n of (m.tame||[])){
+      const a = Animals.list.find(x=>x.nid===n);
+      if(a && a.kind==='wolf'){ a.tame = true; a.angry = false; a.angryT = 0;
+        if(a.g.userData.collar) a.g.userData.collar.visible = true; }
+    }
+  }
+  /* 방장이 동굴에 있으면 Boars.list 가 동굴 것이라, 치워 둔 바깥 목록에서 찾는다 */
+  if(CAVE.on){
+    const k = CAVE.keep;
+    if(!k || !k.boars) return;
+    for(const n of (m.kill||[])){
+      const i = k.boars.findIndex(b=>b.nid===n);
+      if(i>=0){ k.world.remove(k.boars[i].g); k.boars.splice(i,1); }
+    }
+    return;                                // 기절은 밖에 있을 때만 뜻이 있다
+  }
   for(const n of (m.kill||[])){
     const i = Boars.list.findIndex(b=>b.nid===n);
     if(i>=0) Boars.kill(i);
@@ -8230,7 +8355,6 @@ function attack(){
     if(Math.hypot(bs.x-player.x, bs.z-player.z) > it.range + bs.r) continue;
     bossHit(bs, it.dmg || 75); hit++;
   }
-  if(hit && Net.on && !Net.host) Net.send({t:'fx', kill:killN, stun:stunN});
   if(hit){
     if(meat && !killed){
       Snd.play('metalSuccess', .9);
@@ -8264,6 +8388,7 @@ function tameSwing(it){
   }
   const a = Animals.list[best];
   S.bone = Math.max(0, (S.bone||0) - 1);
+  if(Net.on && !Net.host) Net.send({t:'fx', tame:[a.nid]});
   a.tame = true; a.angry = false; a.angryT = 0; a.life = 1e9;
   if(a.g.userData.collar) a.g.userData.collar.visible = true;
   pickFx(a.x, 1.3, a.z, 0xff9ec4);
@@ -8481,7 +8606,6 @@ function shoot(it, now){
     bulletTracer(mv.x,mv.y,mv.z, b.x, .85, b.z);
     if(it.id === 'rpg') rpgBlast(b.x, .9, b.z);
     Boars.damage(best, it.dmg || BOAR_HP);
-    if(Net.on && !Net.host) Net.send({t:'fx', kill:[b.nid], stun:[]});
     Snd.play('boarHit', .8);
     toast('🔫 명중!');
   } else {
@@ -8521,7 +8645,7 @@ function gameOver(cause){
 
   /* 함께 탐험 중이면 나만 잠깐 쓰러졌다가 마을에서 다시 시작한다 */
   if(Net.on){
-    Net.send({t:'died'});
+    Net.send({t:'died', cause: cause || 'boar'});
     let n = 3;
     const show = ()=> centerMsg(`<h2>${title}</h2>`+
       `<p>친구들의 탐험은 계속되고 있어요.</p><p><b>${n}초</b> 뒤 마을에서 다시 시작합니다…</p>`);
@@ -8998,8 +9122,10 @@ function tryInteract(){
 
 /* ---------- 다른 사람이 한 행동을 내 화면에도 반영한다 ---------- */
 let netRemote = false;
+let netLater = [];                        // 동굴에 있는 동안 밀린 남의 행동
 function netRemoteAct(nid){
-  if(CAVE.on) return;                     // 동굴 안은 번호 체계가 따로다
+  /* 동굴 안은 번호 체계가 따로다. 잊지 말고 적어 두었다가 나와서 반영한다. */
+  if(CAVE.on){ if(netLater.indexOf(nid) < 0) netLater.push(nid); return; }
   const it = findNid(nid);
   if(!it) return;
   /* 사람마다 따로 여는 것(net:'solo')은 남이 열어도 내 화면은 그대로 둔다.
