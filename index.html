@@ -481,9 +481,8 @@
     padding:7px 12px;font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px;
     transition:background .8s,color .8s,border-color .8s;}
   /* 말로 못 부를 때 누르는 버튼 (손으로 하는 기기) */
-  #powers{position:absolute;left:50%;transform:translateX(-50%);
-    bottom:calc(112px + env(safe-area-inset-bottom));
-    display:none;gap:7px;pointer-events:auto;z-index:30;}
+  #powers{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    display:none;flex-direction:column;gap:7px;pointer-events:auto;z-index:30;}
   #powers button{width:60px;height:52px;border-radius:14px;padding:0;cursor:pointer;
     background:rgba(255,255,255,.9);border:3px solid var(--bark);font-family:inherit;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -3699,7 +3698,56 @@ function avatarModel(color){
     eye.position.set(.075*sd,.02,.16); head.add(eye);
   }
 
-  g.userData = { legs, arms, phase:0 };
+  const plain = [];
+  g.traverse(o=>{ if(o.isMesh) plain.push(o); });     // 여기까지가 평상복
+
+  /* ── 🦾 슈트 (그 사람이 입고 있으면 보인다) ──
+     내 몸의 갑주와 같은 크기로 미리 만들어 두고 보이기만 껐다 켠다. */
+  const RED = 0xa32c22, RED2 = 0xc7392c, GOLD = 0xd8a63a;
+  const suit = [];
+  const sAdd = (parent, mesh, x, y, z)=>{
+    mesh.position.set(x, y, z); mesh.visible = false;
+    parent.add(mesh); suit.push(mesh); return mesh;
+  };
+  const box = (w,h,d,c)=> new THREE.Mesh(new THREE.BoxGeometry(w,h,d), M(c));
+
+  sAdd(g, box(.754,.66,.468, RED),  0, 1.14, 0);          // 몸통
+  sAdd(g, box(.780,.12,.494, GOLD), 0,  .84, 0);          // 허리띠
+  sAdd(g, box(.572,.16,.481, GOLD), 0, 1.00, 0);          // 배
+  for(let i=0;i<2;i++){                                    // 팔
+    const sd = i === 0 ? -1 : 1, ox = .13*sd;
+    sAdd(arms[i], box(.205,.68,.205, RED),  ox, -.33, 0);
+    sAdd(arms[i], box(.267,.20,.267, RED2), ox, -.02, 0);
+    sAdd(arms[i], box(.216,.18,.226, GOLD), ox, -.66, 0);
+    sAdd(legs[i], box(.274,.86,.274, RED),  0, -.42, 0);   // 다리
+    sAdd(legs[i], box(.296,.10,.296, GOLD), 0, -.36, 0);
+    sAdd(legs[i], box(.308,.20,.410, RED2), 0, -.76, .057);
+  }
+  sAdd(g, new THREE.Mesh(new THREE.SphereGeometry(.335, 18, 14), M(RED2)),
+       0, 1.6575, 0);                                      // 투구
+
+  /* 가슴의 아크리액터 · 얼굴판 (그림) */
+  const picMat = (url, sz)=>{
+    const mt = new THREE.MeshBasicMaterial({ color:GOLD, transparent:true,
+                                             side:THREE.DoubleSide, fog:false });
+    try{ new THREE.TextureLoader().load(url, (t)=>{
+      if(sz){ t.offset.set(.316,.216); t.repeat.set(.312,.776); }
+      mt.map = t; mt.color.setHex(0xffffff); mt.needsUpdate = true;
+    }, undefined, ()=>{}); }catch(e){}
+    return mt;
+  };
+  const arc = new THREE.Mesh(new THREE.PlaneGeometry(.24,.24),
+    picMat('img/arc_reactor_4x.png', false));
+  arc.material.depthWrite = false;
+  sAdd(g, arc, 0, 1.28, .2535);
+  const FA = 1.62, FV = 1.85;
+  const plate = new THREE.Mesh(new THREE.SphereGeometry(.341, 20, 14,
+      Math.PI/2 - FA/2, FA, Math.PI/2 - FV/2, FV),
+    picMat('img/faceplate_7496.png', true));
+  plate.material.alphaTest = .15;
+  sAdd(g, plate, 0, 1.6575, 0);
+
+  g.userData = { legs, arms, phase:0, plain, suit, suitOn:false };
   return g;
 }
 function nameTag(text){
@@ -3847,7 +3895,7 @@ const Net = {
 
       case 'pos': {
         const p = this.players.get(m.id); if(!p) break;
-        p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov;
+        p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov; p.suit = !!m.suit;
         break;
       }
       case 'died': {
@@ -3947,7 +3995,8 @@ const Net = {
       this.posAcc = 0;
       if(!CAVE.on)                                  // 동굴 안에서는 자리를 알리지 않는다
         this.send({t:'pos', x:+player.x.toFixed(2), z:+player.z.toFixed(2),
-                   yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0)});
+                   yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0),
+                   suit: S.suit ? 1 : 0});          // 🦾 슈트를 입었는지도 알린다
     }
     /* 공유 자원이 바뀌었으면 알리기 */
     this.shareAcc += dt;
@@ -3980,6 +4029,13 @@ const Net = {
       const sw = Math.sin(u.phase) * (p.mov ? .6 : 0);
       u.legs[0].rotation.x =  sw; u.legs[1].rotation.x = -sw;
       u.arms[0].rotation.x = -sw; u.arms[1].rotation.x =  sw;
+      /* 🦾 그 사람이 슈트를 입었으면 갑주를, 아니면 평상복을 보여 준다 */
+      const on = !!p.suit;
+      if(u.suitOn !== on){
+        u.suitOn = on;
+        u.suit.forEach(m=> m.visible = on);
+        u.plain.forEach(m=> m.visible = !on);
+      }
       p.g.position.y = p.mov ? Math.abs(Math.sin(u.phase))*.05 : 0;
     }
   },
