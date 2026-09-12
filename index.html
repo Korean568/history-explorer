@@ -2574,7 +2574,7 @@ function bodyModel(){
       arcMat.map = t; arcMat.color.setHex(0xffffff); arcMat.needsUpdate = true;
     }, undefined, ()=>{});
   }catch(e){}
-  const core = new THREE.Mesh(new THREE.PlaneGeometry(.21,.21), arcMat);
+  const core = new THREE.Mesh(new THREE.PlaneGeometry(.24,.24), arcMat);
   core.position.set(0,1.28,.195); put(g, core, true, 0);
 
   /* ── 팔 : 어깨를 축으로 흔든다 ── */
