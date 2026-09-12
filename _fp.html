@@ -2595,11 +2595,8 @@ function bodyModel(){
      여기까지 만든 갑주(몸통·팔·다리)를 두툼하게 부풀린다.
      길이는 그대로 두고 두께만 키워야 발이 땅에 붙고 팔 길이도 맞는다.
      (머리는 이 아래에서 따로 만든다 — 투구는 이미 크다) */
-  const SB_BODY = 1.30, SB_ARM = 1.55, SB_LEG = 1.14;
+  const SB = 1.30;
   for(const m of armorParts){
-    const SB = bodyArms.indexOf(m.parent) >= 0 ? SB_ARM
-             : bodyLegs.indexOf(m.parent) >= 0 ? SB_LEG
-             : SB_BODY;
     const t = m.geometry && m.geometry.type;
     if(t === 'BoxGeometry' || t === 'CylinderGeometry') m.geometry.scale(SB, 1, SB);
     else if(t === 'CircleGeometry' || t === 'TorusGeometry') m.geometry.scale(SB, SB, 1);
@@ -2707,7 +2704,7 @@ function updateBody(dt, t){
   if(!bodyG){ bodyG = bodyModel(); scene.add(bodyG); }
 
   /* 장착 모션 : 부위가 하나씩 날아와 붙는다 */
-  if(suitT > 0){
+  if(suitT > 0 && !window.__hold){
     suitT = Math.max(0, suitT - dt);
     const k = 1 - suitT/SUIT_ANIM;                 // 0 → 1
     /* 붙는 차례
@@ -9011,7 +9008,7 @@ function tick(){
     camera.rotation.set(pitch+sh*0.12, yaw, 0);
     camera.updateMatrixWorld(true);
     const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
-    const D = 5.4;
+    const D = (window.__camD || 5.4);
     const sgn = (camMode === 2) ? -1 : 1;      // 앞에서 볼 때는 반대쪽으로 돈다
     camera.position.set(player.x - fw.x*D*sgn,
                         Math.max(.85, 1.72 + player.y - fw.y*D*sgn + .55),
@@ -9427,6 +9424,19 @@ function mpStartBtn(){
     beginGame(parseInt(b.dataset.era,10));
   });
 })();
+
+window.__F2 = {
+  step(n,dt){ for(let i=0;i<n;i++) updateBody(dt, i*dt); },
+  cam(m){ camMode=m; thirdOn=m>0; const i=equippedItem(); if(i) i.view.visible=!thirdOn; },
+  look(y,p){ yaw=y; pitch=p; }, tp(x,z){ player.x=x; player.z=z; player.y=0; },
+  hide(){ hideCenter(); paused=false; },
+  suitOn(){ S.suit=true; suitT=0; hpSet(maxHp());
+            armorParts.forEach(m=>{ const h=m.userData.home; m.position.set(h.x,h.y,h.z); m.scale.setScalar(1); m.visible=true;
+              if(m.userData.slideDown) m.rotation.x=0; if(m.userData.glowIn) m.material.opacity=1; });
+            plainParts.forEach(m=>m.visible=!!m.userData.keep); window.__hold=1; },
+  raised(){ const f=armorParts.find(m=>m.userData.slideDown); f.rotation.x=-1.05; f.scale.setScalar(.959);
+            const l=armorParts.find(m=>m.userData.glowIn); l.visible=false; }
+};
 })();
 </script>
 </body>
