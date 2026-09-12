@@ -3651,23 +3651,54 @@ const SHARED_KEYS = ['wood','stick','hide','seed','clay','grass','grain',
                      'copper','tin','pillar','cap'];
 
 /* 다른 사람 모습 */
+/* 다른 사람의 모습 — C 키로 보는 내 모습과 똑같이 생겼습니다.
+   티셔츠 색만 사람마다 달라서 누가 누군지 알아볼 수 있어요. */
 function avatarModel(color){
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(.30,.37,.95,8), M(color));
-  body.position.y = .92; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.28,10,8), M(0xf0c9a0));
-  head.position.y = 1.62; g.add(head);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(.30,10,6,0,TAU,0,Math.PI*.55), M(0x3a2a1c));
-  hair.position.y = 1.64; g.add(hair);
+  const SKIN = 0xd8a273, HAIR = 0x3a2a1c;
+  const SHIRT = color || 0xf4f4f2, JEAN = 0x3d5a8c, JEAN2 = 0x2f4770, BELT = 0x4a3524;
   const legs = [], arms = [];
-  for(const sx of [-.15,.15]){
-    const l = new THREE.Mesh(new THREE.CylinderGeometry(.11,.09,.78,6), M(0x6b4a2e));
-    l.position.set(sx,.39,0); g.add(l); legs.push(l);
+
+  /* 👖 다리 : 엉덩이를 축으로 흔든다 */
+  for(const sd of [-1,1]){
+    const hip = new THREE.Group(); hip.position.set(.17*sd, .84, 0); g.add(hip); legs.push(hip);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.115,.095,.72,6), M(JEAN));
+    leg.position.y = -.36; hip.add(leg);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(.098,.098,.10,6), M(JEAN2));
+    cuff.position.y = -.70; hip.add(cuff);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(.17,.10,.26), M(0x6b4a33));
+    foot.position.set(0,-.79,.05); hip.add(foot);
   }
-  for(const sx of [-.40,.40]){
-    const a = new THREE.Mesh(new THREE.CylinderGeometry(.09,.08,.68,6), M(0xf0c9a0));
-    a.position.set(sx,1.02,0); g.add(a); arms.push(a);
+
+  /* 👕 몸통 */
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.50,.62,.28), M(SHIRT));
+  torso.position.y = 1.14; g.add(torso);
+  const waist = new THREE.Mesh(new THREE.BoxGeometry(.52,.10,.30), M(BELT));
+  waist.position.y = .86; g.add(waist);
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(.50,.16,.29), M(JEAN));
+  hips.position.y = .78; g.add(hips);
+  const neck = new THREE.Mesh(new THREE.BoxGeometry(.20,.08,.22), M(SKIN));
+  neck.position.y = 1.47; g.add(neck);
+
+  /* 팔 : 어깨를 축으로 흔든다 */
+  for(const sd of [-1,1]){
+    const sh = new THREE.Group(); sh.position.set(.35*sd, 1.38, 0); g.add(sh); arms.push(sh);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(.082,.072,.66,6), M(SKIN));
+    arm.position.y = -.33; sh.add(arm);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(.105,.095,.22,6), M(SHIRT));
+    sleeve.position.y = -.08; sh.add(sleeve);
   }
+
+  /* 머리 */
+  const head = new THREE.Group(); head.position.y = 1.62; g.add(head);
+  head.add(new THREE.Mesh(new THREE.BoxGeometry(.32,.34,.30), M(SKIN)));
+  const hair = new THREE.Mesh(new THREE.BoxGeometry(.35,.13,.33), M(HAIR));
+  hair.position.y = .18; head.add(hair);
+  for(const sd of [-1,1]){
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.02), M(0x2a2320));
+    eye.position.set(.075*sd,.02,.16); head.add(eye);
+  }
+
   g.userData = { legs, arms, phase:0 };
   return g;
 }
