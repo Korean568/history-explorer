@@ -2732,6 +2732,7 @@ function updateBody(dt, t){
     const GST  = [0,    .173, .380, .535, .924];   // 무리마다 시작하는 때
     const GDUR = [.259, .276, .155, .389, .077];   // 무리마다 걸리는 시간
     /* 입을 때는 몸통부터, 벗을 때는 거꾸로 눈부터 */
+    const SKY_X = 0, SKY_Y = 26, SKY_Z = -7;    // 갑주가 모여 있는 하늘의 한 점
     const gStart = (o)=> S.suit ? (GST[o]||0)
                                 : 1 - ((GST[o]||0) + (GDUR[o]||.30));
     armorParts.forEach((m)=>{
@@ -2768,11 +2769,14 @@ function updateBody(dt, t){
         }
         return;
       }
+      /* 갑주는 저 하늘에 점처럼 모여 있다가 하나씩 날아 내려와 붙는다.
+         (벗을 때는 거꾸로 날아 올라가 점이 된다) */
       const ease = 1 - Math.pow(1-e, 3);
-      m.position.set(h.x*(1 + (1-ease)*2.2),
-                     h.y + (1-ease)*1.5,
-                     h.z*(1 + (1-ease)*2.2) + (1-ease)*(h.x>=0?.8:-.8));
-      m.scale.setScalar(0.05 + ease*0.95);
+      m.visible = S.suit ? true : e > 0.001;     // 입을 때는 처음부터 하늘에 떠 있다
+      m.position.set(SKY_X + (h.x - SKY_X)*ease,
+                     SKY_Y + (h.y - SKY_Y)*ease,
+                     SKY_Z + (h.z - SKY_Z)*ease);
+      m.scale.setScalar(0.03 + ease*0.97);
     });
     /* 옷은 그 자리의 갑주가 덮는 순간 사라지고, 벗을 때는 갑주가 떠나는 순간 돌아온다 */
     plainParts.forEach(m=>{
