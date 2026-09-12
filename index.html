@@ -2594,20 +2594,19 @@ function bodyModel(){
   /* ── 머리 ── */
   const head = new THREE.Group(); head.position.y = 1.62; g.add(head);
   const skull = new THREE.Mesh(new THREE.BoxGeometry(.32,.34,.30), M(SKIN));
-  put(head, skull, false, 2).userData.keep = true;   // 슈트를 입어도 그대로 (투구 속에 있다)
+  put(head, skull, false, 2);
   const hair = new THREE.Mesh(new THREE.BoxGeometry(.35,.13,.33), M(HAIR));
-  hair.position.y = .18; put(head, hair, false, 2).userData.keep = true;
+  hair.position.y = .18; put(head, hair, false, 2);
   for(const sd of [-1,1]){
     const eye = new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.02), M(0x2a2320));
-    eye.position.set(.075*sd,.02,.16); put(head, eye, false, 2).userData.keep = true;
+    eye.position.set(.075*sd,.02,.16); put(head, eye, false, 2);
   }
   /* 머리 : 동그란 빨간 투구.
      완전한 공이라, 얼굴판을 가운데를 축으로 돌려도 늘 껍데기 바깥에 머문다 (파고들지 않는다) */
-  /* 투구는 네모난 머리가 통째로 들어가는 크기.
-     머리 가운데(높이 .0375)에서 가장 먼 머리카락 모서리까지가 약 .318 이라,
-     반지름 .335 면 모서리가 껍데기를 뚫고 나오지 않는다. */
-  const HR = .335, HSX = 1;
-  const HUP = .0375;                  // 투구 가운데 = 네모난 머리의 가운데
+  /* 슈트 머리 : 창도 이음매도 없는 통짜 빨간 투구.
+     앞쪽은 금색 얼굴판이 곡면째 덮고, 그림의 투명한 가장자리로는 이 빨강이 비친다. */
+  const HR = .215, HSX = 1;
+  const HUP = .020;
   /* 🟡 얼굴판 그림 : 500×250 그림에서 얼굴판이 있는 곳만 잘라 붙인다
      (파일이 없으면 금색 판으로 대신합니다) */
   const fpMat = (url, extra)=>{
@@ -2628,30 +2627,14 @@ function bodyModel(){
                         Math.PI/2 - FPA/2, FPA,          // 정면(+z)을 가운데로
                         Math.PI/2 - FPV/2, FPV).scale(HSX, 1, HSX);
 
-  /* 빨간 투구 : 얼굴판 자리에 창이 뚫린 껍데기.
-     얼굴판이 들려 있는 동안에는 창으로 사람 얼굴이 보인다. */
-  const WA = FPA - .08, WV = FPV - .08;                   // 창 크기 (얼굴판보다 조금 작게)
-  const P2 = Math.PI/2;
-  const shell = (ps, pl, ts, tl, r, col)=>{
-    const mt = M(col); mt.side = THREE.DoubleSide;
-    return new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14, ps, pl, ts, tl).scale(HSX, 1, HSX), mt);
-  };
-  const helm = new THREE.Group();
-  helm.add(shell(P2 + WA/2, Math.PI*2 - WA, 0, Math.PI, HR, RED2));        // 뒤 · 옆
-  helm.add(shell(P2 - WA/2, WA, 0, P2 - WV/2, HR, RED2));                  // 창 위 (정수리)
-  helm.add(shell(P2 - WA/2, WA, P2 + WV/2, P2 - WV/2, HR, RED2));          // 창 아래 (턱)
+  const helm = new THREE.Mesh(new THREE.SphereGeometry(HR, 20, 16), M(RED2));
   helm.position.y = HUP;
-  put(head, helm, true, 2);          // 머리 : 빨간 껍데기가 먼저
+  put(head, helm, true, 2);          // 머리 : 빨간 투구가 먼저
 
-  /* 투구 속에는 원래의 네모난 머리가 그대로 들어 있다 (창으로 보인다) */
-  /* 눈이 꺼진 얼굴판 — 이마 위로 젖혀져 있다가 내려와 덮인다 */
+  /* 눈이 꺼진 얼굴판 — 위로 젖혀져 있다가 내려와 덮인다 */
   const face = new THREE.Mesh(fpGeo(HR + .006),
     fpMat('img/faceplate_7340.png', { alphaTest:.15 }));
   face.position.y = HUP;
-  /* 얼굴판 뒤를 받치는 빨간 판 — 그림의 투명한 가장자리로 속(살갗)이 비치지 않게.
-     얼굴판의 자식이라 함께 들리고 함께 덮인다 (들리면 얼굴은 그대로 보인다) */
-  const fpBackMat = M(RED2); fpBackMat.side = THREE.DoubleSide;
-  face.add(new THREE.Mesh(fpGeo(HR + .003), fpBackMat));
   put(head, face, true, 3).userData.slideDown = true;
   face.userData.hinge = true;                             // 머리 가운데를 축으로 돈다
   /* 👁️ 눈에 불이 켜진 얼굴판 — 같은 자리에 겹쳐 두고 마지막에 서서히 밝힌다 */
@@ -2733,8 +2716,8 @@ function updateBody(dt, t){
              들려 있는 동안은 투구 껍데기 안쪽으로 조금 들어가, 꼭대기를 넘은 부분이
              껍데기에 가려진다 (창으로 보이는 아랫부분만 남는다) */
           m.position.set(h.x, h.y, h.z);
-          m.rotation.x = -(1-dn)*1.05;
-          m.scale.setScalar(1 - (1-dn)*0.041);    // .341 → .327 : 껍데기(.335) 안, 머리(.318) 밖
+          m.rotation.x = -(1-dn)*0.55;            // 정수리를 넘지 않는 만큼만 젖힌다
+          m.scale.setScalar(1);
         } else {
           m.position.set(h.x, h.y + (1-dn)*0.40, h.z + (1-dn)*0.05);
           m.rotation.x = -(1-dn)*1.0;
@@ -2749,7 +2732,6 @@ function updateBody(dt, t){
     });
     /* 옷은 그 자리의 갑주가 덮는 순간 사라지고, 벗을 때는 갑주가 떠나는 순간 돌아온다 */
     plainParts.forEach(m=>{
-      if(m.userData.keep){ m.visible = true; return; }
       const st = gStart(m.userData.ord||0) + .07;
       m.visible = S.suit ? (k < st) : (k > st);
     });
@@ -2758,7 +2740,7 @@ function updateBody(dt, t){
         m.position.set(h.x,h.y,h.z); m.scale.setScalar(1); m.visible = !!S.suit;
         if(m.userData.slideDown) m.rotation.x = 0;
         if(m.userData.glowIn) m.material.opacity = 1; });
-      plainParts.forEach(m=> m.visible = m.userData.keep ? true : !S.suit);
+      plainParts.forEach(m=> m.visible = !S.suit);
     }
   }
   if(coreLt) coreLt.intensity = S.suit ? (1.4 + Math.sin(t*3)*0.25) : 0;
