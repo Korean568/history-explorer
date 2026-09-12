@@ -252,7 +252,10 @@ wss.on('connection', (ws) => {
       case 'pos':
         me.x = +m.x || 0; me.z = +m.z || 0; me.yaw = +m.yaw || 0;
         me.mov = +m.mov || 0;
-        broadcast(room, { t:'pos', id:me.id, x:me.x, z:me.z, yaw:me.yaw, mov:me.mov }, me.id);
+        me.y = +m.y || 0;                 // 날고 있으면 떠 있는 높이
+        me.suit = m.suit ? 1 : 0;         // 슈트를 입었는가
+        broadcast(room, { t:'pos', id:me.id, x:me.x, y:me.y, z:me.z,
+                          yaw:me.yaw, mov:me.mov, suit:me.suit }, me.id);
         break;
 
       /* ---------- 채집물 · 제작소를 사용했다 ---------- */
@@ -328,8 +331,8 @@ wss.on('connection', (ws) => {
       /* ---------- 호스트가 하늘 시각을 맞춘다 ---------- */
       case 'sky':
         if (!isHost) break;
-        room.skyT = ((+m.t || 0) % CYCLE + CYCLE) % CYCLE;
-        broadcast(room, { t:'sky', t: room.skyT }, me.id);
+        room.skyT = ((+m.time || 0) % CYCLE + CYCLE) % CYCLE;
+        broadcast(room, { t:'sky', time: room.skyT }, me.id);
         break;
 
       /* ---------- 채팅 ---------- */
@@ -384,7 +387,7 @@ setInterval(() => {
 
 /* 1초마다 시각을 알려 준다 (그 사이는 각자 계산) */
 setInterval(() => {
-  for (const room of rooms.values()) broadcast(room, { t:'sky', t: room.skyT });
+  for (const room of rooms.values()) broadcast(room, { t:'sky', time: room.skyT });
 }, 1000);
 
 (async () => {

@@ -3895,7 +3895,8 @@ const Net = {
 
       case 'pos': {
         const p = this.players.get(m.id); if(!p) break;
-        p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov; p.suit = !!m.suit;
+        p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov;
+        p.suit = !!m.suit; p.y = +m.y || 0;
         break;
       }
       case 'died': {
@@ -3911,7 +3912,7 @@ const Net = {
       }
 
       case 'sky':
-        netSkySet(m.t);
+        netSkySet(m.time);
         break;
 
       case 'shared':
@@ -3996,7 +3997,8 @@ const Net = {
       if(!CAVE.on)                                  // 동굴 안에서는 자리를 알리지 않는다
         this.send({t:'pos', x:+player.x.toFixed(2), z:+player.z.toFixed(2),
                    yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0),
-                   suit: S.suit ? 1 : 0});          // 🦾 슈트를 입었는지도 알린다
+                   y: +player.y.toFixed(2),         // 🕊️ 날고 있으면 떠 있는 높이
+                   suit: S.suit ? 1 : 0});          // 🦾 슈트를 입었는지도
     }
     /* 공유 자원이 바뀌었으면 알리기 */
     this.shareAcc += dt;
@@ -4021,7 +4023,8 @@ const Net = {
       while(dy> Math.PI) dy -= TAU;
       while(dy<-Math.PI) dy += TAU;
       p.cyaw += dy*k;
-      p.g.position.set(p.cx, 0, p.cz);
+      p.cy = (p.cy||0) + ((p.y||0) - (p.cy||0))*k;
+      p.g.position.set(p.cx, p.cy, p.cz);
       p.g.rotation.y = p.cyaw + Math.PI;          // 아바타는 +Z 를 보고 서 있다
       p.g.visible = !p.dead;
       const u = p.g.userData;
@@ -4036,7 +4039,7 @@ const Net = {
         u.suit.forEach(m=> m.visible = on);
         u.plain.forEach(m=> m.visible = !on);
       }
-      p.g.position.y = p.mov ? Math.abs(Math.sin(u.phase))*.05 : 0;
+      p.g.position.y = (p.cy||0) + (p.mov ? Math.abs(Math.sin(u.phase))*.05 : 0);
     }
   },
 
