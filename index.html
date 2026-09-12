@@ -2670,9 +2670,15 @@ function bodyModel(){
   /* 눈이 꺼진 얼굴판 — 위로 젖혀져 있다가 내려와 덮인다 */
   const face = new THREE.Mesh(fpGeo(HR + .006),
     fpMat('img/faceplate_7340.png', { alphaTest:.15 }));
-  face.position.y = HUP;
-  put(head, face, true, 3).userData.slideDown = true;
-  face.userData.hinge = true;                             // 머리 가운데를 축으로 돈다
+  /* 경첩은 이마 — 얼굴판 윗머리가 닿는 자리. 여기를 축으로 돌면 얼굴판이
+     투구 속으로 숨지 않고 이마 앞쪽으로 번쩍 세워져, 밖에서도 잘 보인다. */
+  const hy = HR*Math.cos(Math.PI/2 - FPV/2), hz = HR*Math.sin(Math.PI/2 - FPV/2);
+  const hinge = new THREE.Group();
+  hinge.position.set(0, HUP + hy, hz);
+  face.position.set(0, -hy, -hz);                         // 제자리로 되돌린다
+  hinge.add(face);
+  put(head, hinge, true, 3).userData.slideDown = true;
+  hinge.userData.hinge = true;
   /* 👁️ 눈에 불이 켜진 얼굴판 — 같은 자리에 겹쳐 두고 마지막에 서서히 밝힌다 */
   const lit = new THREE.Mesh(fpGeo(HR + .010),
     fpMat('img/faceplate_7496.png', { opacity:0, depthWrite:false }));
@@ -2752,8 +2758,8 @@ function updateBody(dt, t){
              들려 있는 동안은 투구 껍데기 안쪽으로 조금 들어가, 꼭대기를 넘은 부분이
              껍데기에 가려진다 (창으로 보이는 아랫부분만 남는다) */
           m.position.set(h.x, h.y, h.z);
-          m.rotation.x = -(1-dn)*1.05;            // 구멍이 드러날 만큼 젖힌다
-          m.scale.setScalar(1 - (1-dn)*0.041);    // .341 → .327 : 껍데기(.335) 안으로 들어가 가려진다
+          m.rotation.x = -(1-dn)*1.15;            // 이마 앞쪽으로 번쩍 세운다
+          m.scale.setScalar(1);
         } else {
           m.position.set(h.x, h.y + (1-dn)*0.40, h.z + (1-dn)*0.05);
           m.rotation.x = -(1-dn)*1.0;
