@@ -2595,8 +2595,8 @@ function bodyModel(){
      여기까지 만든 갑주(몸통·팔·다리)를 두툼하게 부풀린다.
      길이는 그대로 두고 두께만 키워야 발이 땅에 붙고 팔 길이도 맞는다.
      (머리는 이 아래에서 따로 만든다 — 투구는 이미 크다) */
-  const SB_BODY = 1.30, SB_ARM = 2.05, SB_LEG = 1.14;
-  const ARM_OUT = .17;               // 두꺼워진 팔이 몸통에 파묻히지 않게 바깥으로
+  const SB_BODY = 1.30, SB_ARM = 1.72, SB_LEG = 1.14;
+  const ARM_OUT = .13;               // 두꺼워진 팔이 몸통에 파묻히지 않게 바깥으로
   for(const m of armorParts){
     const ai = bodyArms.indexOf(m.parent);
     const SB = ai >= 0 ? SB_ARM
