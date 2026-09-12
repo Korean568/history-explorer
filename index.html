@@ -2565,11 +2565,16 @@ function bodyModel(){
   const abs = new THREE.Mesh(new THREE.BoxGeometry(.44,.16,.37), M(GOLD));
   abs.position.y = 1.00; put(g, abs, true, 0);
 
-  /* 가슴의 아크리액터 */
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(.115,.030,6,16), M(GOLD));
-  ring.position.set(0,1.28,.185); ring.rotation.x = 0; put(g, ring, true, 0);
-  const core = new THREE.Mesh(new THREE.CircleGeometry(.095,14),
-    new THREE.MeshBasicMaterial({color:0xcaf2ff}));
+  /* 가슴의 아크리액터 — 그림을 그대로 붙인다 (금색 테두리 없음).
+     PlaneGeometry 라 아래의 몸통 부풀리기에 끌려가지 않고 이 크기 그대로 남는다. */
+  const arcMat = new THREE.MeshBasicMaterial({ color:0xcaf2ff, transparent:true,
+                                               depthWrite:false, fog:false });
+  try{
+    new THREE.TextureLoader().load('img/arc_reactor_4x.png', (t)=>{
+      arcMat.map = t; arcMat.color.setHex(0xffffff); arcMat.needsUpdate = true;
+    }, undefined, ()=>{});
+  }catch(e){}
+  const core = new THREE.Mesh(new THREE.PlaneGeometry(.21,.21), arcMat);
   core.position.set(0,1.28,.195); put(g, core, true, 0);
 
   /* ── 팔 : 어깨를 축으로 흔든다 ── */
