@@ -3933,7 +3933,25 @@ function avatarModel(color){
   jet(arms[0], -.13, -.78, 0); jet(arms[1], .13, -.78, 0);
   jet(legs[0], 0, -.88, .05);  jet(legs[1], 0, -.88, .05);
 
-  g.userData = { legs, arms, phase:0, plain, suit, suitOn:false, jets };
+  /* 💥 버스터 덧갑주 (내 몸의 것과 같은 크기·자리) */
+  const bust = new THREE.Group(); bust.visible = false; g.add(bust);
+  const BST = 0x8c2a20, BST2 = 0xb8452f, BGOLD = 0xc99a34;
+  const bAdd = (w,h,d,c,x,y,z)=>{ const m = box(w,h,d,c); m.position.set(x,y,z); bust.add(m); return m; };
+  bAdd(.72,.62,.26, BST,  0, 1.16, -.28);                 // 등
+  bAdd(.78,.46,.20, BST2, 0, 1.22,  .22);                 // 가슴
+  for(const sd of [-1,1]){
+    bAdd(.34,.32,.40, BST2,  .46*sd, 1.42, 0);            // 어깨
+    bAdd(.30,.34,.32, BST,   .42*sd, 1.00, .02);          // 팔뚝
+    bAdd(.30,.28,.30, BGOLD, .42*sd,  .74, .04);          // 주먹
+    bAdd(.30,.40,.30, BST,   .19*sd,  .60, 0);            // 허벅지
+    const jp = new THREE.Mesh(new THREE.CylinderGeometry(.09,.11,.22,8), M(0x4a4f57));
+    jp.position.set(.26*sd, 1.20, -.40); bust.add(jp);    // 제트팩
+  }
+  bAdd(.50,.14,.34, BGOLD, 0, 1.50, 0);                   // 목깃
+  jet(bust, -.26, 1.09, -.40);                            // 🔥 제트팩 불꽃 (버스터일 때만 보인다)
+  jet(bust,  .26, 1.09, -.40);
+
+  g.userData = { legs, arms, phase:0, plain, suit, suitOn:false, jets, bust };
   return g;
 }
 function nameTag(text){
@@ -4091,6 +4109,7 @@ const Net = {
         const p = this.players.get(m.id); if(!p) break;
         p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov;
         p.suit = !!m.suit; p.y = +m.y || 0; p.cave = !!m.cave; p.fly = !!m.fly;
+        p.buster = !!m.buster;
         break;
       }
       case 'died': {
@@ -4202,7 +4221,8 @@ const Net = {
                  y: +player.y.toFixed(2),           // 🕊️ 날고 있으면 떠 있는 높이
                  suit: S.suit ? 1 : 0,              // 🦾 슈트를 입었는지도
                  cave: CAVE.on ? 1 : 0,             // 🕳️ 동굴 안이면 모습을 감춘다
-                 fly: (flyOn && S.suit) ? 1 : 0});  // 🔥 날고 있으면 손발 불꽃
+                 fly: (flyOn && S.suit) ? 1 : 0,    // 🔥 날고 있으면 손발 불꽃
+                 buster: (S.buster && S.suit) ? 1 : 0});   // 💥 버스터를 입었는지
     }
     /* 공유 자원이 바뀌었으면 알리기 */
     this.shareAcc += dt;
@@ -4263,6 +4283,11 @@ const Net = {
         u.legs[0].rotation.x = u.legs[1].rotation.x = 0;
         u.arms[0].rotation.x = u.arms[1].rotation.x = 0;
       }
+      /* 💥 그 사람이 버스터를 입었으면 덧갑주를 보이고 몸집을 키운다 */
+      const bOn = !!(p.suit && p.buster);
+      u.bust.visible = bOn;
+      const want = bOn ? 1.42 : 1;
+      p.g.scale.setScalar(p.g.scale.x + (want - p.g.scale.x)*Math.min(1, dt*6));
       p.g.position.y = (p.cy||0) + (p.mov ? Math.abs(Math.sin(u.phase))*.05 : 0);
     }
   },
