@@ -255,8 +255,9 @@ wss.on('connection', (ws) => {
         me.y = +m.y || 0;                 // 날고 있으면 떠 있는 높이
         me.suit = m.suit ? 1 : 0;         // 슈트를 입었는가
         me.cave = m.cave ? 1 : 0;         // 동굴 안인가
+        me.fly  = m.fly  ? 1 : 0;         // 날고 있는가 (손발 불꽃)
         broadcast(room, { t:'pos', id:me.id, x:me.x, y:me.y, z:me.z,
-                          yaw:me.yaw, mov:me.mov, suit:me.suit, cave:me.cave }, me.id);
+                          yaw:me.yaw, mov:me.mov, suit:me.suit, cave:me.cave, fly:me.fly }, me.id);
         break;
 
       /* ---------- 채집물 · 제작소를 사용했다 ---------- */

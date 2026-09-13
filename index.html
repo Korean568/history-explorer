@@ -3859,7 +3859,24 @@ function avatarModel(color){
   plate.material.alphaTest = .15;
   sAdd(g, plate, 0, 1.6575, 0);
 
-  g.userData = { legs, arms, phase:0, plain, suit, suitOn:false };
+  /* 🔥 날 때 손발 불꽃 (내 몸의 것과 같은 모양) */
+  const jets = [];
+  const jet = (parent, x, y, z)=>{
+    const f = new THREE.Group(); f.position.set(x, y, z); f.visible = false;
+    const cols = [0xff6a1e, 0xffa53a, 0xffe08a], cones = [];
+    for(let i=0;i<3;i++){
+      const c = new THREE.Mesh(new THREE.ConeGeometry(.19-i*.045, .66-i*.17, 7),
+        new THREE.MeshBasicMaterial({color:cols[i], transparent:true, opacity:.9,
+                                     depthWrite:false, fog:false}));
+      c.rotation.x = Math.PI; c.position.y = -(.33 - i*.09);
+      f.add(c); cones.push(c);
+    }
+    f.userData.cones = cones; parent.add(f); jets.push(f);
+  };
+  jet(arms[0], -.13, -.78, 0); jet(arms[1], .13, -.78, 0);
+  jet(legs[0], 0, -.88, .05);  jet(legs[1], 0, -.88, .05);
+
+  g.userData = { legs, arms, phase:0, plain, suit, suitOn:false, jets };
   return g;
 }
 function nameTag(text){
@@ -4016,7 +4033,7 @@ const Net = {
       case 'pos': {
         const p = this.players.get(m.id); if(!p) break;
         p.x = m.x; p.z = m.z; p.yaw = m.yaw; p.mov = m.mov;
-        p.suit = !!m.suit; p.y = +m.y || 0; p.cave = !!m.cave;
+        p.suit = !!m.suit; p.y = +m.y || 0; p.cave = !!m.cave; p.fly = !!m.fly;
         break;
       }
       case 'died': {
@@ -4127,7 +4144,8 @@ const Net = {
                  yaw:+yaw.toFixed(3), mov: (bobLevel>0.3?1:0),
                  y: +player.y.toFixed(2),           // 🕊️ 날고 있으면 떠 있는 높이
                  suit: S.suit ? 1 : 0,              // 🦾 슈트를 입었는지도
-                 cave: CAVE.on ? 1 : 0});           // 🕳️ 동굴 안이면 모습을 감춘다
+                 cave: CAVE.on ? 1 : 0,             // 🕳️ 동굴 안이면 모습을 감춘다
+                 fly: (flyOn && S.suit) ? 1 : 0});  // 🔥 날고 있으면 손발 불꽃
     }
     /* 공유 자원이 바뀌었으면 알리기 */
     this.shareAcc += dt;
@@ -4171,6 +4189,22 @@ const Net = {
         u.suitOn = on;
         u.suit.forEach(m=> m.visible = on);
         u.plain.forEach(m=> m.visible = !on);
+      }
+      /* 🔥 슈트를 입고 날고 있으면 : 선 채로 손발에서 불꽃 */
+      const jetOn = !!(p.suit && p.fly);
+      for(let j=0;j<u.jets.length;j++){
+        const f = u.jets[j]; f.visible = jetOn;
+        if(!jetOn) continue;
+        const cs = f.userData.cones, tt = clock.elapsedTime;
+        for(let i=0;i<cs.length;i++){
+          const w = 0.85 + 0.15*Math.sin(tt*(14+i*3.4)+i+j);
+          cs[i].scale.set(w, 1 + 0.25*Math.sin(tt*(11+i*2.6)+i*1.7+j), w);
+          cs[i].rotation.y = tt*(1.2+i*0.5);
+        }
+      }
+      if(jetOn){
+        u.legs[0].rotation.x = u.legs[1].rotation.x = 0;
+        u.arms[0].rotation.x = u.arms[1].rotation.x = 0;
       }
       p.g.position.y = (p.cy||0) + (p.mov ? Math.abs(Math.sin(u.phase))*.05 : 0);
     }
