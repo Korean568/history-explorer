@@ -2317,7 +2317,13 @@ let shieldT = 0;                 // 방패가 남은 시간(초)
 const FLY_SPEED  = 15;           // 나는 빠르기
 const FLY_MAX    = 55;           // 올라갈 수 있는 높이
 const SHIELD_SEC = 2.0;          // 방패가 버티는 시간
-const airborne = ()=> player.y > 3;      // 이만큼 떠 있으면 땅의 것들이 못 닿는다
+const airborne = ()=> player.y > 3;
+
+/* 내가 보고 있는 쪽 (1인칭 시선).
+   카메라에서 읽으면 3인칭 앞모습일 때 카메라가 나를 마주 보고 있어 앞뒤가 뒤집힌다. */
+function lookDir(v){
+  return v.set(0, 0, -1).applyEuler(new THREE.Euler(pitch, yaw, 0, camera.rotation.order));
+}      // 이만큼 떠 있으면 땅의 것들이 못 닿는다
 
 const Voice = {
   rec:null, on:false, last:{},
@@ -2463,7 +2469,7 @@ function busterSmash(){
 /* 🔆 beam — 보고 있는 쪽으로 레이저를 쏜다 (부하 샌즈의 빛줄기와 같은 것) */
 function voiceBeam(){
   if(needSuit('레이저를 쏠')) return;
-  const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
+  const fw = lookDir(new THREE.Vector3());          // 시점(앞모습 등)과 상관없이 내가 보는 쪽
   const ex = player.x, ey = 1.72 + player.y, ez = player.z;
   const tx = ex + fw.x*BEAM_LEN, ty = ey + fw.y*BEAM_LEN, tz = ez + fw.z*BEAM_LEN;
   fxBeam(ex, ey-.18, ez, tx, ty, tz, 0x9fe6ff, .35, .24);
@@ -9269,7 +9275,7 @@ function tick(){
       let nx, nz;
       if(flyOn){
         /* 🕊️ 날 때 : W(↑) 를 누르면 지금 보고 있는 쪽으로 — 위아래까지 — 나아간다 */
-        const fw = new THREE.Vector3(); camera.getWorldDirection(fw);
+        const fw = lookDir(new THREE.Vector3());    // 앞모습이어도 내가 보는 쪽으로 난다
         const rt = new THREE.Vector3(-fw.z, 0, fw.x);
         if(rt.lengthSq() > 1e-6) rt.normalize();
         const d3 = new THREE.Vector3(fw.x*(-mz) + rt.x*mx,
