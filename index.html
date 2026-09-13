@@ -2492,8 +2492,9 @@ function voiceBeam(){
   const ex = player.x - Math.sin(yaw)*.27*bk;
   const ez = player.z - Math.cos(yaw)*.27*bk;
   const ey = player.y + 1.28*bk;
-  fxBeam(ex, ey, ez, tx, ty, tz, 0x9fe6ff, .35, .24);
-  fxBeam(ex, ey, ez, tx, ty, tz, 0xffffff, .22, .10);
+  /* 가슴 쪽은 가늘게 시작해 앞으로 갈수록 굵어진다 — 쏘는 동안에도 아크리액터가 비쳐 보인다 */
+  fxBeam(ex, ey, ez, tx, ty, tz, 0x9fe6ff, .35, .24, .035);
+  fxBeam(ex, ey, ez, tx, ty, tz, 0xffffff, .22, .10, .014);
   pickFx(ex, ey, ez, 0x9fe6ff);                       // 가슴에서 번쩍
   Snd.play('metalStir', 1.0);
   Snd.throttle('rpgShot', 200, .6);
@@ -5721,11 +5722,14 @@ function seekVideo(){
 
 /* ---------- 세계가 바뀌어도 남는 효과 ---------- */
 let sceneFx = [];
-function fxBeam(ax,ay,az, bx,by,bz, col, life, rad){
+/* rad0 를 주면 시작점은 rad0, 끝은 rad 굵기로 점점 굵어진다 (주지 않으면 고른 굵기) */
+function fxBeam(ax,ay,az, bx,by,bz, col, life, rad, rad0){
   const from = new THREE.Vector3(ax,ay,az), to = new THREE.Vector3(bx,by,bz);
   const dir = to.clone().sub(from), len = dir.length();
   if(len < .05) return;
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rad||.12, rad||.12, len, 7),
+  const r1 = rad || .12, r0 = (rad0 != null ? rad0 : r1);
+  /* 원기둥의 위(top)가 끝점, 아래(bottom)가 시작점 쪽을 향한다 */
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, len, 10),
     new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:1, fog:false}));
   m.position.copy(from).addScaledVector(dir, .5);
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
