@@ -2576,6 +2576,7 @@ let camMode  = 0;                // 0 = 1인칭 · 1 = 3인칭(뒤) · 2 = 3인�
 let thirdOn  = false;            // 3인칭인가 (camMode 가 0 이 아니면 참)
 let bodyG    = null;             // 내 몸
 let plainParts = [], armorParts = [], bodyLegs = [], bodyArms = [];
+let bodyJets = [];               // 날 때 손발에서 뿜어 나오는 불꽃
 let coreLt   = null;
 const SUIT_ANIM = 1.80;          // 장착에 걸리는 시간(초) — 얼굴판이 오래 들려 있다 탁 내려온다
 let   suitT  = 0;                // 남은 장착 모션 시간
@@ -2585,7 +2586,7 @@ function bodyModel(){
   const SKIN = 0xd8a273, HAIR = 0x3a2a1c;
   const SHIRT = 0xf4f4f2, JEAN = 0x3d5a8c, JEAN2 = 0x2f4770, BELT = 0x4a3524;
   const RED = 0xa32c22, RED2 = 0xc7392c, GOLD = 0xd8a63a, STEEL = 0x4a4f57;
-  plainParts = []; armorParts = []; bodyLegs = []; bodyArms = [];
+  plainParts = []; armorParts = []; bodyLegs = []; bodyArms = []; bodyJets = [];
 
   /* 살 / 갑주를 한 자리에 겹쳐 두고, 보이는 쪽만 바꿉니다.
      ord = 붙는 차례 : 0 몸통 · 1 팔다리 · 2 머리(빨강) · 3 머리(금색) */
@@ -2685,6 +2686,27 @@ function bodyModel(){
     if(ai >= 0) m.position.x += (ai === 0 ? -ARM_OUT : ARM_OUT);
     m.userData.home = { x:m.position.x, y:m.position.y, z:m.position.z };
   }
+
+  /* ── 🔥 날 때 손발에서 뿜어 나오는 불꽃 (모닥불 불꽃을 작게, 거꾸로) ── */
+  const jet = (parent, x, y, z)=>{
+    const f = new THREE.Group(); f.position.set(x, y, z); f.visible = false;
+    const cols = [0xff6a1e, 0xffa53a, 0xffe08a];
+    const cones = [];
+    for(let i=0;i<3;i++){
+      const c = new THREE.Mesh(new THREE.ConeGeometry(.19-i*.045, .66-i*.17, 7),
+        new THREE.MeshBasicMaterial({color:cols[i], transparent:true, opacity:.9,
+                                     depthWrite:false, fog:false}));
+      c.rotation.x = Math.PI;                     // 끝이 아래를 향한다
+      c.position.y = -(.33 - i*.09);
+      f.add(c); cones.push(c);
+    }
+    f.userData.cones = cones;
+    parent.add(f); bodyJets.push(f);
+  };
+  jet(bodyArms[0], -ARM_OUT, -.78, 0);            // 왼손
+  jet(bodyArms[1],  ARM_OUT, -.78, 0);            // 오른손
+  jet(bodyLegs[0], 0, -.88, .05);                 // 왼발
+  jet(bodyLegs[1], 0, -.88, .05);                 // 오른발
 
   /* ── 머리 ── */
   const head = new THREE.Group(); head.position.y = 1.62; g.add(head);
@@ -2874,6 +2896,24 @@ function updateBody(dt, t){
   if(!bodyG.visible) return;
   bodyG.position.set(player.x, player.y, player.z);
   bodyG.rotation.y = yaw + Math.PI;      // 카메라가 보는 쪽 = 뒷모습이 보인다
+  /* 날 때는 팔다리를 곧게 펴고 선 채로, 손발에서 불꽃이 뿜어 나온다 */
+  const jetOn = flyOn && S.suit && suitT <= 0;
+  for(let j=0;j<bodyJets.length;j++){
+    const f = bodyJets[j];
+    f.visible = jetOn;
+    if(!jetOn) continue;
+    const cs = f.userData.cones;
+    for(let i=0;i<cs.length;i++){
+      const w = 0.85 + 0.15*Math.sin(t*(14+i*3.4)+i+j);
+      cs[i].scale.set(w, 1 + 0.25*Math.sin(t*(11+i*2.6)+i*1.7+j), w);
+      cs[i].rotation.y = t*(1.2+i*0.5);
+    }
+  }
+  if(jetOn){
+    bodyLegs[0].rotation.x = bodyLegs[1].rotation.x = 0;
+    bodyArms[0].rotation.x = bodyArms[1].rotation.x = 0;
+    return;
+  }
   /* 걸을 때 팔다리를 젓는다 */
   const swing = Math.sin(stepPhase*TAU) * bobLevel * (running ? .85 : .55);
   bodyLegs[0].rotation.x =  swing; bodyLegs[1].rotation.x = -swing;
