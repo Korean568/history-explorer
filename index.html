@@ -481,14 +481,23 @@
     padding:7px 12px;font-weight:800;font-size:15px;display:flex;align-items:center;gap:8px;
     transition:background .8s,color .8s,border-color .8s;}
   /* 말로 못 부를 때 누르는 버튼 (손으로 하는 기기) */
-  #powers{position:absolute;left:12px;top:50%;transform:translateY(-50%);
-    display:none;flex-direction:column;gap:7px;pointer-events:auto;z-index:30;}
-  #powers button{width:60px;height:52px;border-radius:14px;padding:0;cursor:pointer;
+  /* 멀티에서는 왼쪽 위가 채팅, 그 아래가 자원 칩이라 오른쪽 가운데에 둔다 */
+  #powers{position:absolute;right:10px;top:calc(50% - 58px);transform:translateY(-50%);
+    display:none;flex-direction:column;gap:5px;pointer-events:auto;z-index:30;}
+  #powers button{width:52px;height:44px;border-radius:13px;padding:0;cursor:pointer;
     background:rgba(255,255,255,.9);border:3px solid var(--bark);font-family:inherit;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:1px;font-size:19px;line-height:1;}
-  #powers button span{font-size:9.5px;font-weight:800;color:#6b4a2a;}
+    gap:1px;font-size:17px;line-height:1;}
+  #powers button span{font-size:8.5px;font-weight:800;color:#6b4a2a;}
   #powers button:active{transform:scale(1.08);background:rgba(242,193,78,.6);}
+  /* 가로로 눕힌 휴대폰처럼 화면이 낮으면 세로 줄이 들어갈 자리가 없다 →
+     위쪽 가운데(채팅칸 오른쪽, 미션 왼쪽)에 가로 줄로 */
+  @media (max-height:740px) and (min-width:700px){
+    #powers{top:calc(58px + env(safe-area-inset-top));right:auto;left:calc(50% + 34px);
+      transform:translateX(-50%);flex-direction:row;gap:4px;}
+    #powers button{width:44px;height:38px;font-size:15px;border-radius:11px;}
+    #powers button span{font-size:7.5px;}
+  }
 
   /* 슈트를 입고 있을 때 */
   #suitChip{position:absolute;top:calc(56px + env(safe-area-inset-top));left:252px;
@@ -647,6 +656,7 @@
     <button data-p="shield">🛡️<span>shield</span></button>
     <button data-p="buster">💥<span>buster</span></button>
     <button data-p="beam">🔆<span>beam</span></button>
+    <button data-p="helmet">🪖<span>helmet</span></button>
   </div>
   <div id="missions"><h4>🎯 오늘의 순서</h4><ul></ul></div>
   <div id="stats">
@@ -2318,6 +2328,8 @@ const FLY_SPEED  = 15;           // 나는 빠르기
 const FLY_MAX    = 55;           // 올라갈 수 있는 높이
 const SHIELD_SEC = 2.0;          // 방패가 버티는 시간
 const airborne = ()=> player.y > 3;
+let helmetOpen = false;          // 🪖 투구(얼굴판)를 열어 두었는가
+let helmetK    = 0;              // 열린 정도 0(닫힘) ~ 1(열림), 부드럽게 따라간다
 
 /* 내가 보고 있는 쪽 (1인칭 시선).
    카메라에서 읽으면 3인칭 앞모습일 때 카메라가 나를 마주 보고 있어 앞뒤가 뒤집힌다. */
@@ -2353,7 +2365,7 @@ const Voice = {
     r.onend = ()=>{ if(this.on) setTimeout(()=>{ try{ r.start(); }catch(e){} }, 300); };
     this.rec = r; this.on = true;
     try{ r.start(); }catch(e){ this.on = false; return; }
-    toast('🗣️ 음성 명령 — "fly" · "shield" · "buster" · "beam"');
+    toast('🗣️ 음성 명령 — "fly" · "shield" · "buster" · "beam" · "open the helmet"');
   },
 
   /* 같은 말을 연달아 알아들어도 한 번만 듣는다 */
@@ -2371,6 +2383,8 @@ const Voice = {
       this.fire('shield', voiceShield);
     if(/\bbusters?\b/.test(t) || t.indexOf('버스터') >= 0) this.fire('buster', voiceBuster);
     if(/\bbeams?\b/.test(t) || t.indexOf('빔') >= 0) this.fire('beam', voiceBeam);
+    if(/\bopen\s+(the\s+)?helmet\b/.test(t))  this.fire('helmOpen',  ()=>voiceHelmet(true));
+    if(/\bclose\s+(the\s+)?helmet\b/.test(t)) this.fire('helmClose', ()=>voiceHelmet(false));
   },
 
   stop(){ this.on = false; try{ if(this.rec) this.rec.stop(); }catch(e){} },
@@ -2512,6 +2526,17 @@ function voiceBeam(){
     if(bs.alive) bs.vuln = was;
   }
   if(n) toast('🔆 레이저가 ' + n + '마리를 맞혔어요!');
+}
+
+/* 🪖 open the helmet / close the helmet */
+function voiceHelmet(open){
+  if(needSuit('투구를 열')) return;
+  if(helmetOpen === open) return;
+  helmetOpen = open;
+  Snd.play('metalStir', .9);
+  setTimeout(()=>Snd.play('boltRelease', .8), open ? 60 : 180);
+  toast(open ? '🪖 투구를 열었어요 — "close the helmet" 이라고 하면 닫혀요'
+             : '🪖 투구를 닫았어요');
 }
 
 /* 🛡️ shield */
@@ -2900,6 +2925,19 @@ function updateBody(dt, t){
   }
   if(coreLt) coreLt.intensity = S.suit ? (1.4 + Math.sin(t*3)*0.25) : 0;
 
+  /* 🪖 투구 열기 · 닫기 : 이마 경첩으로 얼굴판을 들어 올리고, 열려 있으면 눈불이 꺼진다 */
+  helmetK += ((helmetOpen && S.suit ? 1 : 0) - helmetK) * Math.min(1, dt*9);
+  if(S.suit && suitT <= 0){
+    const plate = armorParts.find(m=>m.userData.slideDown);
+    const eyes  = armorParts.find(m=>m.userData.glowIn);
+    if(plate) plate.rotation.x = -helmetK*1.15;
+    if(eyes){
+      /* 열 때는 들리는 만큼 서서히 꺼지고, 닫을 때는 3분의 1만 내려와도 확 켜진다 */
+      eyes.material.opacity = helmetOpen ? (1 - helmetK) : Math.min(1, (1 - helmetK)*3);
+      eyes.visible = helmetK < .98;
+    }
+  }
+
   /* 버스터는 몸집이 커진다 */
   if(bodyG.userData.buster) bodyG.userData.buster.visible = !!S.buster && suitT <= 0;
   const want = S.buster ? 1.42 : 1;
@@ -2937,7 +2975,8 @@ function updateBody(dt, t){
 function toggleSuit(){
   if(paused || dead) return;
   S.suit = !S.suit;
-  if(!S.suit){ S.buster = false; flyOn = false; shieldT = 0; }   // 슈트를 벗으면 다 풀린다
+  if(!S.suit){ S.buster = false; flyOn = false; shieldT = 0;     // 슈트를 벗으면 다 풀린다
+               helmetOpen = false; helmetK = 0; }
   /* 입으면 체력이 5000 으로 가득 차고, 벗으면 사람의 몸으로 돌아온다 */
   hpSet(S.suit ? maxHp() : Math.min(PLAYER_HP, Math.max(1, (S.hp/SUIT_HP)*PLAYER_HP)));
   suitT = SUIT_ANIM;
@@ -9161,6 +9200,7 @@ document.querySelectorAll('#powers button').forEach(bt=>{
     else if(p === 'shield') voiceShield();
     else if(p === 'buster') voiceBuster();
     else if(p === 'beam') voiceBeam();
+    else if(p === 'helmet') voiceHelmet(!helmetOpen);     // 버튼은 열고 닫기를 번갈아
   });
 });
 
