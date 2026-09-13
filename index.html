@@ -2840,6 +2840,10 @@ function bodyModel(){
   const collar = new THREE.Mesh(new THREE.BoxGeometry(.50,.14,.34), M(BGOLD));
   collar.position.set(0,1.50,0); badd(collar);
   g.userData.buster = bust;
+  /* 🔥 버스터 등의 제트팩 두 개에서도 불이 뿜어 나온다 (날 때).
+     버스터 무리의 자식이라 버스터가 아닐 때는 저절로 감춰진다. */
+  jet(bust, -.26, 1.09, -.40);
+  jet(bust,  .26, 1.09, -.40);
 
   coreLt = new THREE.PointLight(0x9fe4ff, 0, 10, 2);
   coreLt.position.set(0,1.28,.45); g.add(coreLt);
