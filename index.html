@@ -2470,10 +2470,17 @@ function busterSmash(){
 function voiceBeam(){
   if(needSuit('레이저를 쏠')) return;
   const fw = lookDir(new THREE.Vector3());          // 시점(앞모습 등)과 상관없이 내가 보는 쪽
-  const ex = player.x, ey = 1.72 + player.y, ez = player.z;
-  const tx = ex + fw.x*BEAM_LEN, ty = ey + fw.y*BEAM_LEN, tz = ez + fw.z*BEAM_LEN;
-  fxBeam(ex, ey-.18, ez, tx, ty, tz, 0x9fe6ff, .35, .24);
-  fxBeam(ex, ey-.18, ez, tx, ty, tz, 0xffffff, .22, .10);
+  /* 겨누는 곳 : 눈에서 보는 쪽으로 BEAM_LEN 만큼 */
+  const eyeY = 1.72 + player.y;
+  const tx = player.x + fw.x*BEAM_LEN, ty = eyeY + fw.y*BEAM_LEN, tz = player.z + fw.z*BEAM_LEN;
+  /* 쏘는 곳 : 가슴의 아크리액터 (몸이 향한 앞쪽, 버스터면 커진 몸에 맞춘다) */
+  const bk = (bodyG ? bodyG.scale.x : 1);
+  const ex = player.x - Math.sin(yaw)*.27*bk;
+  const ez = player.z - Math.cos(yaw)*.27*bk;
+  const ey = player.y + 1.28*bk;
+  fxBeam(ex, ey, ez, tx, ty, tz, 0x9fe6ff, .35, .24);
+  fxBeam(ex, ey, ez, tx, ty, tz, 0xffffff, .22, .10);
+  pickFx(ex, ey, ez, 0x9fe6ff);                       // 가슴에서 번쩍
   Snd.play('metalStir', 1.0);
   Snd.throttle('rpgShot', 200, .6);
   camShake = Math.max(camShake, .9);
