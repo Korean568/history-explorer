@@ -304,7 +304,7 @@ wss.on('connection', (ws) => {
       /* ---------- 늑대와 토끼 (호스트가 알려 준다) ---------- */
       case 'animals':
         if (!isHost) break;
-        room.animals = Array.isArray(m.list) ? m.list.slice(0, 16) : [];
+        room.animals = Array.isArray(m.list) ? m.list.slice(0, 40) : [];   // 늑대 20 + 새끼 + 토끼
         broadcast(room, { t:'animals', list: room.animals }, me.id);
         break;
 
@@ -315,7 +315,8 @@ wss.on('connection', (ws) => {
                                   kill: m.kill || [], stun: m.stun || [],
                                   hit:  m.hit  || [],        // 멧돼지에게 준 피해
                                   ahit: m.ahit || [],        // 늑대·토끼에게 준 피해
-                                  tame: m.tame || [] });     // 길들인 늑대
+                                  tame: m.tame || [],        // 길들인 늑대
+                                  feed: m.feed || [] });     // 고기를 준 늑대
         break;
       }
 

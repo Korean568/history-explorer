@@ -1302,6 +1302,11 @@ const WOLF_DMG    = 18;
 const WOLF_HIT_CD = 1.0;
 const WOLF_SPEED  = 7.4;
 const WOLF_TAME_DMG = 50;        // 길들인 늑대가 멧돼지를 한 번 물 때
+const WOLF_MAX      = 20;        // 늑대는 새끼까지 합쳐 20마리까지
+const WOLF_GROW_SEC = 120;       // 새끼가 저절로 다 자라는 데 걸리는 시간(초)
+const WOLF_LOVE_SEC = 20;        // 고기를 먹고 짝을 찾는 시간(초)
+const WOLF_BREED_CD = 45;        // 새끼를 낳은 뒤 다시 낳기까지(초)
+const MEAT_GROW     = 0.34;      // 새끼에게 고기를 주면 이만큼 더 자란다 (세 번이면 어른)
 /* 🐰 토끼 : 공격하지 않고 도망만 갑니다 */
 const RAB_HP      = 20;
 const RAB_SPEED   = 9.4;
@@ -1973,6 +1978,7 @@ const Animals = {
                      angry: false, angryT: 0,
                      life: wolf ? 60 : 1e9,
                      tame: false,
+                     baby: false, age: 1, love: 0, breedCd: 0,
                      speed: (wolf ? WOLF_SPEED : RAB_SPEED) + Math.random()*BOAR_SPEED_VAR });
     if(wolf) Snd.play('wolfHowl', .55);
   },
@@ -1997,11 +2003,75 @@ const Animals = {
     return 'hit';
   },
 
+  /* 몸집 : 늑대 새끼는 작게 태어나 자라면서 커진다 */
+  size(a){ return a.kind === 'wolf' ? (a.baby ? .45 + .55*(a.age||0) : 1) : .9; },
+
+  /* 💕 짝짓기 : 고기를 먹은 늑대는 가까운 짝을 찾아가고, 둘이 만나면 새끼가 태어난다 */
+  breed(dt){
+    if(paused) return;
+    const wolves = this.list.filter(a=>a.kind === 'wolf');
+    for(const a of wolves){
+      a.love = Math.max(0, (a.love||0) - dt);
+      a.breedCd = Math.max(0, (a.breedCd||0) - dt);
+      a.mate = null;
+      if(a.baby){                                   // 새끼는 저절로 조금씩 자란다
+        a.age = Math.min(1, (a.age||0) + dt/WOLF_GROW_SEC);
+        if(a.age >= 1){ a.baby = false; if(a.tame) toast('🐺 어린 늑대가 다 자랐어요!'); }
+      }
+      if(a.love > 0){                               // 머리 위로 분홍 반짝
+        a.heartT = (a.heartT||0) - dt;
+        if(a.heartT <= 0){ a.heartT = .6; pickFx(a.x, 1.5, a.z, 0xff7fb0); }
+      }
+    }
+    for(const a of wolves){
+      if(!(a.love > 0) || a.baby || a.angry) continue;
+      let best = null, bd = 18;
+      for(const b of wolves){
+        if(b === a || !(b.love > 0) || b.baby || b.angry) continue;
+        const d = Math.hypot(a.x-b.x, a.z-b.z);
+        if(d < bd){ bd = d; best = b; }
+      }
+      a.mate = best;
+      if(best && bd < 1.8 && this.count('wolf') < WOLF_MAX){
+        const tame = !!(a.tame && best.tame);      // 둘 다 길들인 늑대면 새끼도 길들여져 있다
+        a.love = best.love = 0;
+        a.breedCd = best.breedCd = WOLF_BREED_CD;
+        this.spawnPup((a.x+best.x)/2, (a.z+best.z)/2, tame);
+      }
+    }
+  },
+
+  spawnPup(x, z, tame){
+    this.spawn('wolf', {x, z});
+    const p = this.list[this.list.length-1];
+    p.baby = true; p.age = 0; p.hp = WOLF_HP*.5;
+    p.tame = tame; p.life = WOLF_GROW_SEC + 60;
+    if(p.g.userData.collar) p.g.userData.collar.visible = tame;
+    pickFx(x, 1.2, z, 0xff7fb0);
+    Snd.play('levelUp', .6);
+    toast(tame ? '🐶 길들인 늑대에게서 새끼가 태어났어요!' : '🐶 늑대 새끼가 태어났어요!');
+  },
+
+  /* 🍗 고기를 먹인다 (방장 · 혼자일 때 실제로 적용) — 어떻게 되었는지 돌려준다 */
+  feed(a){
+    if(!a || a.kind !== 'wolf' || a.angry) return 'no';
+    if(a.baby){
+      a.age = Math.min(1, (a.age||0) + MEAT_GROW);
+      pickFx(a.x, 1.0, a.z, 0xffd76a);
+      if(a.age >= 1) a.baby = false;
+      return a.baby ? 'grow' : 'grown';
+    }
+    if((a.breedCd||0) > 0) return 'cd';
+    if(this.count('wolf') >= WOLF_MAX) return 'full';
+    a.love = WOLF_LOVE_SEC; a.heartT = 0;
+    return 'love';
+  },
+
   /* 손님 : 방장이 알려 준 자리로 부드럽게 따라간다 */
   follow(dt){
     for(const a of this.list){
       a.grow = Math.min(1, a.grow + dt*2.2);
-      a.g.scale.setScalar(a.grow * (a.kind === 'wolf' ? 1 : .9));
+      a.g.scale.setScalar(a.grow * this.size(a));
       const k = Math.min(1, dt*11);
       a.x += ((a.tx==null?a.x:a.tx) - a.x)*k;
       a.z += ((a.tz==null?a.z:a.tz) - a.z)*k;
@@ -2019,9 +2089,11 @@ const Animals = {
         const ec = a.angry ? 0xff4a2a : (Sky.night > .35 ? 0xffe27a : 0xc9a24a);
         for(const e of a.g.userData.eyes) e.material.color.setHex(ec);
         if(a.g.userData.collar) a.g.userData.collar.visible = !!a.tame;
+        if(a.love){ a.heartT = (a.heartT||0) - dt;
+          if(a.heartT <= 0){ a.heartT = .6; pickFx(a.x, 1.5, a.z, 0xff7fb0); } }
         a.hitCd = Math.max(0, a.hitCd - dt);
         const d = Math.hypot(player.x-a.x, player.z-a.z);
-        if(a.angry && !a.tame && d < 1.6 && !dead && !airborne() && a.hitCd <= 0){
+        if(a.angry && !a.tame && !a.baby && d < 1.6 && !dead && !airborne() && a.hitCd <= 0){
           a.hitCd = WOLF_HIT_CD; Snd.play('wolfBite', .9);
           hurt(WOLF_DMG, false, 'wolf');
         }
@@ -2041,10 +2113,12 @@ const Animals = {
         g.position.set(e.x, 0, e.z); g.scale.setScalar(.3);
         a = { nid:e.n, kind:e.k, g, x:e.x, z:e.z, dir:e.d, phase:Math.random()*TAU,
               hp:1e9, grow:.3, hitCd:0, hop:0, restT:0, wx:e.x, wz:e.z,
-              tame:false, angry:false, angryT:0, life:1e9, speed:0 };
+              tame:false, angry:false, angryT:0, life:1e9, speed:0,
+              baby:false, age:1, love:0 };
         this.list.push(a);
       }
       a.tx = e.x; a.tz = e.z; a.tdir = e.d; a.angry = !!e.a; a.tame = !!e.t;
+      a.baby = !!e.b; a.age = (e.g == null ? 1 : e.g); a.love = e.l ? 1 : 0;
     }
     for(let i=this.list.length-1;i>=0;i--){
       if(!seen.has(this.list[i].nid)){ world.remove(this.list[i].g); this.list.splice(i,1); }
@@ -2066,7 +2140,7 @@ const Animals = {
   kill(i, drop){
     const a = this.list[i]; if(!a) return;
     this.list.splice(i, 1);
-    if(drop) dropMeat(a.x, a.z, a.kind === 'wolf' ? 2 : 1);
+    if(drop) dropMeat(a.x, a.z, (a.kind === 'wolf' && !a.baby) ? 2 : 1);
     const g = a.g; let t0 = 0, roll = 0;
     pickFx(a.x, .9, a.z, 0xffd76a);
     animated.push(function f(t, dt){
@@ -2089,7 +2163,7 @@ const Animals = {
     if(!paused && !dead){
       const day = !Sky.isNight;
       this.wolfT -= dt;
-      if(day && this.count('wolf') < 3 && this.wolfT <= 0){
+      if(day && this.count('wolf') < WOLF_MAX && this.wolfT <= 0){
         this.wolfT = 12 + Math.random()*10;
         this.spawn('wolf');
       }
@@ -2105,6 +2179,8 @@ const Animals = {
       }
     }
 
+    this.breed(dt);                // 💕 짝짓기 · 새끼 자라기
+
     /* 사람이 타오르는 모닥불 곁에 있으면 늑대도 다가오지 못한다 */
     let guardFire = null;
     for(const f of firePits){
@@ -2115,7 +2191,7 @@ const Animals = {
     for(let i = this.list.length-1; i >= 0; i--){
       const a = this.list[i];
       a.grow = Math.min(1, a.grow + dt*2.2);
-      a.g.scale.setScalar(a.grow * (a.kind === 'wolf' ? 1 : .9));
+      a.g.scale.setScalar(a.grow * this.size(a));
       if(paused) continue;
 
       const dx = player.x - a.x, dz = player.z - a.z;
@@ -2139,7 +2215,12 @@ const Animals = {
           if(od < FIRE_SAFE){ const w = 1-od/FIRE_SAFE; scare = Math.max(scare,w);
                               fx += ox/od*w; fz += oz/od*w; }
         }
-        if(a.tame){
+        if(a.love > 0 && a.mate && !a.angry){
+          /* 💕 짝을 찾아간다 */
+          const mx2 = a.mate.x - a.x, mz2 = a.mate.z - a.z;
+          const ml = Math.max(.001, Math.hypot(mx2, mz2));
+          if(ml > 1.4){ tx = mx2/ml; tz = mz2/ml; sp = a.speed*.7; }
+        } else if(a.tame){
           /* 🦴 길들인 늑대 : 곁을 따라다니다가 멧돼지를 물어 쫓아낸다 */
           a.life = 1e9;
           let ti = -1, td = 15;
@@ -2253,7 +2334,7 @@ const Animals = {
         for(const e of a.g.userData.eyes) e.material.color.setHex(ec);
         /* 화났을 때만 문다 */
         a.hitCd = Math.max(0, a.hitCd - dt);
-        if(a.angry && !guardFire && d < 1.6 && !dead && !airborne() && a.hitCd <= 0){
+        if(a.angry && !a.baby && !guardFire && d < 1.6 && !dead && !airborne() && a.hitCd <= 0){
           a.hitCd = WOLF_HIT_CD;
           Snd.play('wolfBite', .9);
           hurt(WOLF_DMG, false, 'wolf');
@@ -3527,6 +3608,20 @@ const ITEMS = [
         }
       g.rotation.z = .5; g.scale.setScalar(.62); return g;
     } },
+  /* 🍗 고기 — 들고 늑대에게 주면 짝을 찾고, 새끼에게 주면 쑥 자란다 */
+  { id:'meat', key:'7', ic:'🍗', nm:'고기', range:6.0, dmg:0, kill:false, feed:true, cd:500,
+    have:()=> (S.c && (S.c.meat||0) > 0),
+    pos:[.44,-.44,-.80], rot:[-.25,.45,.30],
+    make(){
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(new THREE.SphereGeometry(.30,7,6), M(0xb4453d));
+      m.scale.set(1,.72,1.25); g.add(m);
+      const fat = new THREE.Mesh(new THREE.SphereGeometry(.17,6,5), M(0xdd9a86));
+      fat.scale.set(1,.55,1.1); fat.position.set(0,.14,-.06); g.add(fat);
+      const bone = new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.46,6), M(0xf1e9d6));
+      bone.rotation.z = Math.PI/2.2; bone.position.set(.30,.08,.02); g.add(bone);
+      g.scale.setScalar(.55); return g;
+    } },
   /* 동굴 끝에서 얻는 무기 */
   { id:'rpg', key:'5', ic:'🚀', nm:'RPG', range:60, dmg:1972, kill:true, gun:true, cd:1500,
     mag:1, reloadSec:3.2, shotSnd:'rpgShot',
@@ -4235,7 +4330,8 @@ const Net = {
         this.boarAcc = 0;
         this.send({t:'animals', list: Animals.list.map(a=>({
           n:a.nid, k:a.kind, x:+a.x.toFixed(2), z:+a.z.toFixed(2),
-          d:+a.dir.toFixed(2), a:a.angry?1:0, t:a.tame?1:0 }))});
+          d:+a.dir.toFixed(2), a:a.angry?1:0, t:a.tame?1:0,
+          b:a.baby?1:0, g:+(a.age==null?1:a.age).toFixed(2), l:(a.love>0)?1:0 }))});
         this.send({t:'boars', list: Boars.list.map(b=>({
           n:b.nid, x:+b.x.toFixed(2), z:+b.z.toFixed(2),
           d:+b.dir.toFixed(2), s:b.state, u:+(b.stun||0).toFixed(1),
@@ -8451,6 +8547,10 @@ function netApplyFx(m){
       if(a && a.kind==='wolf'){ a.tame = true; a.angry = false; a.angryT = 0;
         if(a.g.userData.collar) a.g.userData.collar.visible = true; }
     }
+    for(const n of (m.feed||[])){
+      const a = Animals.list.find(x=>x.nid===n);
+      if(a) Animals.feed(a);
+    }
   }
   /* 방장이 동굴에 있으면 Boars.list 가 동굴 것이라, 치워 둔 바깥 목록에서 찾는다 */
   if(CAVE.on){
@@ -8488,6 +8588,7 @@ function attack(){
   if(now - atkAt < cd) return;
   if(it.gun){ shoot(it, now); return; }
   if(it.suit){ atkAt = now; toggleSuit(); return; }
+  if(it.feed){ atkAt = now; swingT = 0.36; feedSwing(it); return; }
   if(it.tame){ atkAt = now; swingT = 0.36; tameSwing(it); return; }
   atkAt = now; swingT = 0.36;
   Snd.play(it.kill ? 'metalStir' : 'stoneMove', 1.0);
@@ -8530,6 +8631,47 @@ function attack(){
     }
   } else Snd.throttle('stoneHit', 300, .35);
 }
+/* 🍗 고기를 내민다 — 다 자란 늑대는 짝을 찾고, 새끼는 쑥 자란다 */
+function feedSwing(it){
+  Snd.play('stoneMove', .6);
+  let best = null, bd = it.range;
+  for(const a of Animals.list){
+    if(a.kind !== 'wolf' || a.angry) continue;
+    const d = Math.hypot(a.x-player.x, a.z-player.z);
+    if(d < bd){ bd = d; best = a; }
+  }
+  if(!best){
+    Snd.throttle('claySoft', 400, .6);
+    Guide.say('🍗 고기를 줄 <b>늑대</b>에게 더 가까이 가세요. (6m 안, 화나지 않은 늑대)', 3.2);
+    return;
+  }
+  let r;
+  if(Net.on && !Net.host){                     // 손님은 방장에게 알린다
+    Net.send({t:'fx', feed:[best.nid]});
+    r = best.baby ? 'grow' : 'love';
+  } else r = Animals.feed(best);
+  if(r === 'cd'){ toast('🐺 이 늑대는 얼마 전에 새끼를 낳았어요 — 조금 뒤에 다시 주세요'); return; }
+  if(r === 'full'){ toast(`🐺 늑대가 너무 많아요 (최대 ${WOLF_MAX}마리)`); return; }
+  if(r === 'no') return;
+  S.c.meat = Math.max(0, (S.c.meat||0) - 1); refresh();
+  Snd.play('meatEat', .8);
+  if(r === 'grow')  toast('🐶 어린 늑대가 고기를 먹고 쑥 자랐어요!');
+  if(r === 'grown') toast('🐺 어린 늑대가 다 자랐어요!');
+  if(r === 'love'){
+    pickFx(best.x, 1.5, best.z, 0xff7fb0);
+    toast('💕 늑대가 짝을 찾아요 — 가까이 있는 다른 늑대에게도 고기를 주세요');
+  }
+  /* 고기를 다 쓰면 손에서 내려놓는다 */
+  if((S.c.meat||0) <= 0){
+    for(const o of ITEMS){ o.view.visible = false; handRest(o); }
+    equipId = null; swingT = 0; aiming = false; firing = false;
+    const ab = document.getElementById('atkBtn');
+    if(ab) ab.style.display = 'none';
+    drawAmmo();
+  }
+  drawHotbar();
+}
+
 /* 🦴 뼈다귀를 내민다 — 가장 가까운 늑대가 친구가 된다 */
 function tameSwing(it){
   Snd.play('stoneMove', .7);
