@@ -1303,6 +1303,7 @@ const WOLF_HIT_CD = 1.0;
 const WOLF_SPEED  = 7.4;
 const WOLF_TAME_DMG = 50;        // 길들인 늑대가 멧돼지를 한 번 물 때
 const WOLF_MAX      = 20;        // 늑대는 새끼까지 합쳐 20마리까지
+const WOLF_SPAWN_SEC = 0.0001;   // 늑대가 한 마리 나타나는 간격(초) — 한 장면에 여러 마리도 나온다
 const WOLF_GROW_SEC = 120;       // 새끼가 저절로 다 자라는 데 걸리는 시간(초)
 const WOLF_LOVE_SEC = 20;        // 고기를 먹고 짝을 찾는 시간(초)
 const WOLF_BREED_CD = 45;        // 새끼를 낳은 뒤 다시 낳기까지(초)
@@ -1941,10 +1942,10 @@ function rabbitModel(){
 /* 늑대와 토끼는 사람마다 자기 화면에서 따로 돌아다닙니다
    (멧돼지처럼 함께 나누지는 않아요) */
 const Animals = {
-  list: [], seq: 1, wolfT: 12, rabT: 2, howlT: 14, growlT: 0,
+  list: [], seq: 1, wolfT: 0, rabT: 2, howlT: 14, growlT: 0,
 
   reset(){ this.list.length = 0; this.seq = 1;
-           this.wolfT = 12; this.rabT = 2; this.howlT = 14; this.growlT = 0; },
+           this.wolfT = 0; this.rabT = 2; this.howlT = 14; this.growlT = 0; },
   /* 동굴에 들어갈 때처럼 세계가 통째로 바뀌면 모두 치운다 */
   clear(){ for(const a of this.list) world.remove(a.g); this.list.length = 0; },
   count(kind){ let n = 0; for(const a of this.list) if(a.kind === kind) n++; return n; },
@@ -1965,7 +1966,7 @@ const Animals = {
     return { x:bx, z:bz };
   },
 
-  spawn(kind, at){
+  spawn(kind, at, quiet){
     const wolf = kind === 'wolf';
     const g = wolf ? wolfModel() : rabbitModel();
     g.userData.noHole = true; world.add(g);
@@ -1980,7 +1981,7 @@ const Animals = {
                      tame: false,
                      baby: false, age: 1, love: 0, breedCd: 0,
                      speed: (wolf ? WOLF_SPEED : RAB_SPEED) + Math.random()*BOAR_SPEED_VAR });
-    if(wolf) Snd.play('wolfHowl', .55);
+    if(wolf && !quiet) Snd.play('wolfHowl', .55);   // 한꺼번에 나올 때는 한 번만 운다
   },
 
   /* 때린다. 체력이 다 닳으면 쓰러지면서 고기를 남긴다.
@@ -2163,9 +2164,16 @@ const Animals = {
     if(!paused && !dead){
       const day = !Sky.isNight;
       this.wolfT -= dt;
-      if(day && this.count('wolf') < WOLF_MAX && this.wolfT <= 0){
-        this.wolfT = 12 + Math.random()*10;
-        this.spawn('wolf');
+      if(day && this.wolfT <= 0){
+        /* 0.0001초마다 한 마리 — 한 장면(약 0.016초) 동안 밀린 만큼 한꺼번에 나온다.
+           20마리가 차면 멈추고, 쓰러지면 바로 다시 채워진다. */
+        let n = 0;
+        while(this.wolfT <= 0 && this.count('wolf') < WOLF_MAX && n < WOLF_MAX){
+          this.wolfT += WOLF_SPAWN_SEC;
+          this.spawn('wolf', null, n > 0);
+          n++;
+        }
+        if(this.wolfT < 0) this.wolfT = 0;           // 꽉 찼을 때 밀린 시간이 쌓이지 않게
       }
       this.rabT -= dt;
       if(day && this.count('rabbit') < 5 && this.rabT <= 0){
