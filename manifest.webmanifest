@@ -1,0 +1,14 @@
+{
+  "name": "역사탐험대 : 선사시대 생존기",
+  "short_name": "역사탐험대",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#2b2118",
+  "theme_color": "#6cb8ec",
+  "icons": [
+    { "src": "img/logo_192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/logo_512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "img/logo_512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
