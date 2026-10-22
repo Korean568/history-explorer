@@ -309,6 +309,42 @@ wss.on('connection', (ws) => {
         broadcast(room, { t:'animals', list: room.animals }, me.id);
         break;
 
+      /* ---------- 🕳️ 동굴 안 상황 (동굴 방장이 알려 준다) ----------
+         동굴 방장은 '동굴에 있는 사람 중 번호가 가장 작은 사람' 이라
+         서버는 누가 방장인지 따지지 않고 그냥 전해 준다.
+         받는 쪽에서 자기가 손님일 때만 반영한다. */
+      case 'cave': {
+        const n = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+        broadcast(room, { t:'cave', by: me.id,
+          ph: String(m.ph || 'walk').slice(0, 10),
+          br: String(m.br || 'lie').slice(0, 8),
+          bs: (Array.isArray(m.bs) ? m.bs : []).slice(0, 8).map((b) => ({
+                k: String(b.k || '').slice(0, 8), x:n(b.x), z:n(b.z),
+                h:n(b.h), m:n(b.m), a:b.a?1:0, v:b.v?1:0, t:b.t?1:0, d:b.d?1:0, s:n(b.s) })),
+          bo: (Array.isArray(m.bo) ? m.bo : []).slice(0, 40).map((b) => ({
+                n:n(b.n), x:n(b.x), z:n(b.z), d:n(b.d),
+                s: String(b.s || 'chase').slice(0, 6), u:n(b.u), h:n(b.h) })),
+          sk: m.sk ? { x:n(m.sk.x), z:n(m.sk.z),
+                       s: String(m.sk.s || 'wait').slice(0, 5), l:n(m.sk.l) } : null,
+        }, me.id);
+        break;
+      }
+
+      /* ---------- 동굴 안에서 준 피해 (동굴 방장이 받아서 적용한다) ---------- */
+      case 'cfx':
+        broadcast(room, { t:'cfx', by: me.id,
+                          hit:  m.hit  || [],      // 멧돼지에게 준 피해
+                          stun: m.stun || [],      // 기절시킨 멧돼지
+                          boss: m.boss || [] },    // 샌즈·매머드에게 준 피해
+                  me.id);
+        break;
+
+      /* ---------- 동굴을 같이 깬 사람에게도 상을 ---------- */
+      case 'cwin':
+        broadcast(room, { t:'cwin', by: me.id,
+                          what: String(m.what || '').slice(0, 10) }, me.id);
+        break;
+
       /* ---------- 공격 결과를 호스트에게 알린다 ---------- */
       case 'fx': {
         const host = room.players.get(room.hostId);

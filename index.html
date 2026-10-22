@@ -1593,7 +1593,7 @@ const Boars = {
   /* 돌도구에 맞아 기절한다 */
   stun(i){
     const b=this.list[i];
-    if(Net.on && !Net.host && !CAVE.on) Net.send({t:'fx', stun:[b.nid]});
+    if(netGuest()) Net.send(CAVE.on ? {t:'cfx', stun:[b.nid]} : {t:'fx', stun:[b.nid]});
     b.stun = STUN_SEC; b.state='stun';
     pickFx(b.x, 1.5, b.z, 0xffe27a);
     this.addStunFx(b);
@@ -1605,8 +1605,9 @@ const Boars = {
     if(!b) return null;
     /* 손님은 스스로 판정하지 않는다 — 방장에게 알리고 맞는 시늉만 한다.
        (그래야 둘이 같이 때려도 체력이 어긋나지 않는다) */
-    if(Net.on && !Net.host && !CAVE.on){
-      Net.send({t:'fx', hit:[[b.nid, amount]]});
+    if(netGuest()){                            // 방장에게 알리기만 한다
+      Net.send(CAVE.on ? {t:'cfx', hit:[[b.nid, amount]]}
+                       : {t:'fx',  hit:[[b.nid, amount]]});
       pickFx(b.x, 1.2, b.z, 0xd4423f);
       Snd.play('boarHit', .7);
       return 'hit';
@@ -1670,7 +1671,7 @@ const Boars = {
   },
 
   update(dt){
-    const guest = Net.on && !Net.host;      // 멧돼지 계산은 방장만 한다
+    const guest = netGuest();   // 멧돼지 계산은 방장(동굴에서는 동굴 방장)만 한다
     /* 밤에는 정해진 수만큼 나타난다 (새벽이 오면 더 이상 나타나지 않는다) */
     if(!guest && !CAVE.on && Sky.isNight && !Sky.isDawn && !paused &&
        this.list.filter(b=>!b.wild).length < this.max()){
@@ -4265,6 +4266,17 @@ const Net = {
         if(!this.host && !CAVE.on) Animals.sync(m.list);
         break;
 
+      /* 🕳️ 동굴 : 방장이 알려 준 대로 따라간다 */
+      case 'cave':
+        if(CAVE.on && !caveLead()) netApplyCave(m);
+        break;
+      case 'cfx':
+        if(CAVE.on && caveLead()) netApplyCaveFx(m);
+        break;
+      case 'cwin':
+        if(CAVE.on && !caveLead()) netCaveWin();
+        break;
+
       case 'fx':
         if(this.host) netApplyFx(m);
         break;
@@ -4339,6 +4351,24 @@ const Net = {
     this.shareAcc += dt;
     if(this.shareAcc > 0.35){ this.shareAcc = 0; this.pushShared(); this.pushMissions(); }
 
+    /* 🕳️ 동굴 방장이면 동굴 안 상황을 알려 준다 (초당 10회) */
+    if(CAVE.on && caveLead()){
+      this.caveAcc = (this.caveAcc || 0) + dt;
+      if(this.caveAcc > 0.1){
+        this.caveAcc = 0;
+        this.send({t:'cave', ph:CAVE.phase, br:CAVE.branch,
+          bs: bosses.map(b=>({ k:b.kind, x:+b.x.toFixed(2), z:+b.z.toFixed(2),
+                h:Math.max(0, Math.round(b.hp)), m:b.max,
+                a:b.alive?1:0, v:b.vuln?1:0, t:b.trial?1:0, d:b.down?1:0,
+                s:+(b.survive==null?0:b.survive).toFixed(1) })),
+          bo: Boars.list.map(b=>({ n:b.nid, x:+b.x.toFixed(2), z:+b.z.toFixed(2),
+                d:+b.dir.toFixed(2), s:b.state, u:+(b.stun||0).toFixed(1),
+                h:Math.max(0, Math.round(b.hp==null?BOAR_HP:b.hp)) })),
+          sk: seek ? { x:+seek.x.toFixed(2), z:+seek.z.toFixed(2),
+                       s:seek.state, l:+seek.left.toFixed(1) } : null });
+      }
+    }
+
     /* 방장이면 멧돼지 위치를 알려 준다 (초당 10회) */
     if(this.host && !CAVE.on){                      // 동굴 멧돼지는 나만의 것
       this.boarAcc += dt;
@@ -4366,7 +4396,8 @@ const Net = {
       p.cy = (p.cy||0) + ((p.y||0) - (p.cy||0))*k;
       p.g.position.set(p.cx, p.cy, p.cz);
       p.g.rotation.y = p.cyaw + Math.PI;          // 아바타는 +Z 를 보고 서 있다
-      p.g.visible = !p.dead && !p.cave;        // 동굴에 들어간 사람은 밖에서 안 보인다
+      /* 같은 곳(바깥이든 동굴이든)에 있는 사람만 보인다 */
+      p.g.visible = !p.dead && (!!p.cave === CAVE.on);
       const u = p.g.userData;
       u.phase += dt * (p.mov ? 7 : 0);
       const sw = Math.sin(u.phase) * (p.mov ? .6 : 0);
@@ -4891,6 +4922,35 @@ function supplyCrate(x,z,rotY,loot){
    ========================================================= */
 let bosses = [];                     // 지금 살아 있는 큰 적들
 const CAVE = { on:false, phase:'walk', keep:null, saved:null, branch:'lie', back:{x:40,z:-24} };
+
+/* =========================================================
+   🕳️ 동굴 멀티플레이
+   동굴 방장 = 동굴 안에 있는 사람 중 번호가 가장 작은 사람.
+   (바깥 방장과 따로 둔다 — 방장이 밖에 있어도 동굴은 굴러가야 하니까)
+   방장이 멧돼지·매머드·샌즈·시크를 굴리고 자리를 알려 주면
+   손님은 그대로 따라 그린다. 때린 건 방장에게 알린다.
+   ========================================================= */
+function caveHostId(){
+  let best = Net.id;
+  for(const [id, p] of Net.players) if(p.cave && !p.dead && id < best) best = id;
+  return best;
+}
+/* 내가 동굴을 굴리는 쪽인가 (혼자 할 때도 참) */
+function caveLead(){ return !Net.on || caveHostId() === Net.id; }
+/* 지금 이 세계에서 내가 손님인가 — 바깥은 방장, 동굴은 동굴 방장 기준 */
+function netGuest(){ return Net.on && (CAVE.on ? !caveLead() : !Net.host); }
+
+/* 동굴 안에 있는 사람들의 자리 (나 + 같은 동굴에 있는 사람) */
+function caveNearest(x, z){
+  let bx = player.x, bz = player.z;
+  let bd = Math.hypot(player.x-x, player.z-z);
+  if(Net.on) for(const p of Net.players.values()){
+    if(!p.cave || p.dead) continue;
+    const d = Math.hypot(p.cx-x, p.cz-z);
+    if(d < bd){ bd = d; bx = p.cx; bz = p.cz; }
+  }
+  return { x:bx, z:bz, d:bd };
+}
 let gdT = 6;                          // 다음 2D 공격까지 남은 시간
 /* 거짓말하면 어려워지고, 진실을 말하면 봐준다 */
 const SURVIVE_LIE   = 1200, SANS_HP_LIE   = 150000;   // 20분 / 15만
@@ -5316,8 +5376,9 @@ function buildCave(){
   caveDoor(0, -13);
   addStation(0, -10, { range:4.6, net:'solo',
     label:()=> CAVE.phase!=='walk' ? '🚪 문'
+             : !caveLead() ? '🚪 먼저 들어온 사람이 열어요'
              : (Boars.list.some(b=>b.gate) ? '🐗 문지기 멧돼지가 막고 있어요' : '🚪 문 열기'),
-    ready:()=> CAVE.phase==='walk' && !Boars.list.some(b=>b.gate),
+    ready:()=> CAVE.phase==='walk' && caveLead() && !Boars.list.some(b=>b.gate),
     act(){ caveOpenDoor(); } });
 }
 
@@ -5370,6 +5431,10 @@ function caveEnter(){
                 boars: Boars.list, px: player.x, pz: player.z,
                 bg: scene.background, fog: scene.fog };
   scene.remove(world);
+  /* 이미 누가 동굴에 있고 그 사람이 동굴 방장이면, 내 동굴 대신 그쪽을 따라간다 */
+  const follow = Net.on && !caveLead();
+  /* 모양은 바깥 세계와 나눠 쓰기도 해서, 지우지 말고 놓아만 준다 */
+  if(follow && CAVE.saved) CAVE.saved = null;
   if(CAVE.saved){
     /* 전에 들어갔던 동굴을 그대로 다시 연다 (매머드·멧돼지·문 상태가 남아 있다) */
     const c = CAVE.saved;
@@ -5394,6 +5459,11 @@ function caveEnter(){
   player.x = 0; player.z = 46; yaw = Math.PI; pitch = -0.02;
   Snd.play('eraShift', .7);
   if(Net.on){ Net.send({t:'chat', msg:'🕳️ 동굴에 들어갔어!'}); Chat.system('🕳️ 동굴에 들어갔습니다'); }
+  if(follow){
+    toast('🕳️ 먼저 들어온 친구의 동굴에 합류했어요');
+    centerMsg('<h2>🕳️ 동굴</h2><p>친구가 먼저 와 있습니다. <b>같이</b> 싸우세요!</p>'+
+              '<p style="opacity:.85">문을 여는 건 먼저 들어온 사람이 합니다.</p>', 4200);
+  } else
   centerMsg('<h2>🕳️ 동굴</h2><p>깊고 캄캄합니다. 돌 말고는 아무것도 없어요.<br>'+
             '<b>안쪽 끝</b>에 무언가 있는 것 같습니다…</p>', 4200);
 }
@@ -5452,23 +5522,7 @@ function caveOpenDoor(){
   CAVE.phase = 'talk';
   Snd.play('thud', 1.0); camShake = 1.4;
 
-  /* 문을 활짝 연다 — 막고 있던 자리도 함께 치운다 */
-  const dg = CAVE.doorG;
-  if(dg){
-    const i = colliders.indexOf(dg.userData.col);
-    if(i >= 0) colliders.splice(i, 1);
-    const leaf = dg.userData.leaf;
-    if(leaf){
-      let a = 0;
-      const swing = (t, dt)=>{
-        a = Math.min(1, a + dt*1.1);
-        leaf.rotation.y = -a*1.95;                  // 안쪽으로 열린다
-        if(a >= 1) removeAnim(swing);
-      };
-      animated.push(swing);
-      Snd.play('stoneMove', .9);
-    }
-  }
+  caveSwingDoor(CAVE.doorG, 1.1);
 
   /* 뼈다귀 아저씨가 기다리고 있다 */
   const sg = sansModel(); sg.position.set(0,0,-46); world.add(sg);
@@ -5495,6 +5549,25 @@ function caveOpenDoor(){
         [ { t:'▶ 다음', cls:'truth', fn:()=>caveSpawn(S.caveAnswer === 'lie') } ]);
     }
   }, 900);
+}
+
+/* 문을 활짝 연다 — 막고 있던 자리도 함께 치운다 */
+function caveSwingDoor(dg, speed){
+  if(!dg || dg.userData.opened) return;
+  dg.userData.opened = true;
+  const i = colliders.indexOf(dg.userData.col);
+  if(i >= 0) colliders.splice(i, 1);
+  const leaf = dg.userData.leaf;
+  if(leaf){
+    let a = 0;
+    const swing = (t, dt)=>{
+      a = Math.min(1, a + dt*(speed || 1.1));
+      leaf.rotation.y = -a*1.95;                  // 안쪽으로 열린다
+      if(a >= 1) removeAnim(swing);
+    };
+    animated.push(swing);
+    Snd.play('stoneMove', .9);
+  }
 }
 
 /* 대답에 따라 싸움이 달라진다 */
@@ -5543,6 +5616,12 @@ function caveSpawn(lied){
 /* ---------- 큰 적이 맞았을 때 ---------- */
 function bossHit(b, dmg){
   if(!b.alive || !b.vuln) return false;
+  if(netGuest()){                              // 체력은 동굴 방장이 센다
+    Net.send({t:'cfx', boss:[[b.kind, dmg]]});
+    pickFx(b.x, b.kind==='mammoth' ? 3.5 : 2.0, b.z, 0xffd76a);
+    Snd.throttle('boarGrowl', 260, .5);
+    return true;
+  }
   if(b.kind === 'sans') dmg *= SANS_DMG_MUL;
   b.hp -= dmg;
   pickFx(b.x, b.kind==='mammoth' ? 3.5 : 2.0, b.z, 0xffd76a);
@@ -5590,6 +5669,7 @@ function caveDefeated(sans){
 /* 상으로 RPG 를 주고 동굴을 나온다 */
 const BONE_REWARD = 8;           // 샌즈가 남기는 뼈다귀 개수
 function caveReward(){
+  if(Net.on && CAVE.on) Net.send({t:'cwin', what:'sans'});   // 같이 싸운 사람에게도
   S.rpg = true; S.akScope = true;
   S.bone = (S.bone||0) + BONE_REWARD;
   drawHotbar();
@@ -5660,8 +5740,9 @@ function seekDoorAppear(){
   CAVE.seekDoorG = caveDoor(0, -66);
   CAVE.doorG = prev;                       // 앞문 기억은 그대로 둔다
   addStation(0, -61, { range:5.2, net:'solo',
-    label:()=> CAVE.phase === 'seekwait' ? '🚪 문 열기' : '🚪 문',
-    ready:()=> CAVE.phase === 'seekwait',
+    label:()=> CAVE.phase !== 'seekwait' ? '🚪 문'
+             : caveLead() ? '🚪 문 열기' : '🚪 먼저 들어온 사람이 열어요',
+    ready:()=> CAVE.phase === 'seekwait' && caveLead(),
     act(){ seekBegin(); } });
   CAVE.phase = 'seekwait';
   Snd.play('thud', 1.0); camShake = 1.6;
@@ -5675,20 +5756,8 @@ function seekBegin(){
   if(CAVE.phase !== 'seekwait') return;
   CAVE.phase = 'seek';
   bossMusic(false);
-  /* 문을 활짝 연다 */
-  const dg = CAVE.seekDoorG;
-  if(dg){
-    const i = colliders.indexOf(dg.userData.col);
-    if(i >= 0) colliders.splice(i, 1);
-    const leaf = dg.userData.leaf;
-    if(leaf){
-      let a = 0;
-      const swing = (t, dt)=>{ a = Math.min(1, a + dt*1.4);
-        leaf.rotation.y = -a*1.95; if(a >= 1) removeAnim(swing); };
-      animated.push(swing);
-    }
-  }
-  Snd.play('stoneMove', .9); Snd.play('nightFall', 1.0);
+  caveSwingDoor(CAVE.seekDoorG, 1.4);
+  Snd.play('nightFall', 1.0);
   const g = seekModel(); g.position.set(0, 0, -62); world.add(g);
   seek = { g, x:0, z:-62, state:'wait', t:SEEK_WAIT, tx:0, tz:0,
            hitCd:0, left:SEEK_SURVIVE, dash:0 };
@@ -5703,12 +5772,15 @@ function seekBegin(){
 
 function seekUpdate(dt){
   if(!seek) return;
+  const gst = netGuest();          // 손님이면 시크 자리는 동굴 방장이 알려 준다
   const g = seek.g;
   g.rotation.y = Math.atan2(player.x-seek.x, player.z-seek.z);
   if(paused || dead){ g.position.set(seek.x, 0, seek.z); return; }
 
-  seek.left -= dt;
-  if(seek.left <= 0){ seekWin(); return; }
+  if(!gst){
+    seek.left -= dt;
+    if(seek.left <= 0){ seekWin(); return; }
+  }
 
   /* 붙잡혔다 */
   seek.hitCd = Math.max(0, seek.hitCd - dt);
@@ -5721,14 +5793,21 @@ function seekUpdate(dt){
   }
 
   let bob = 0;
+  if(gst){
+    /* 손님 : 받은 자리로 부드럽게 따라가기만 한다 */
+    if(seek.state === 'wait' && g.userData.lt) g.userData.lt.intensity = 2.4;
+    g.position.set(seek.x, 0, seek.z);
+    return;
+  }
   if(seek.state === 'wait'){
     seek.t -= dt;
     const k = 1 - Math.max(0, seek.t)/SEEK_WAIT;      // 0 → 1 로 차오른다
     if(g.userData.lt) g.userData.lt.intensity = 3.2*k;
     bob = Math.sin(clock.elapsedTime*14)*.06*k;       // 점점 떨린다
     if(seek.t <= 0){
-      /* 바로 지금 서 있는 자리를 노린다 */
-      seek.tx = player.x; seek.tz = player.z;
+      /* 바로 지금 서 있는 자리를 노린다 (여럿이면 가장 가까운 사람) */
+      const tg = caveNearest(seek.x, seek.z);
+      seek.tx = tg.x; seek.tz = tg.z;
       seek.state = 'dash'; seek.dash = 3.2;
       seekMark(seek.tx, seek.tz);
       Snd.play('boarCharge', 1.0);
@@ -6029,20 +6108,26 @@ function caveUpdate(dt){
   const live = mams.filter(b=>b.alive);
   const sans = bosses.find(b=>b.kind==='sans');
 
+  const gst = netGuest();          // 손님이면 자리는 동굴 방장이 알려 준다
   if(CAVE.phase === 'fight' && !paused && !dead){
-    /* 매머드들이 천천히 다가와 들이받는다 */
+    /* 매머드들이 천천히 다가와 들이받는다 (가장 가까운 사람에게 간다) */
     for(const mam of live){
-      const dx = player.x-mam.x, dz = player.z-mam.z, d = Math.hypot(dx,dz) || 1;
-      if(d > 4.2){ mam.x += dx/d*3.2*dt; mam.z += dz/d*3.2*dt; }
-      mam.g.position.set(mam.x, 0, mam.z);
-      mam.g.rotation.y = Math.atan2(dx, dz) + Math.PI;
+      if(!gst){
+        const tg = caveNearest(mam.x, mam.z);
+        const tx = tg.x-mam.x, tz = tg.z-mam.z, td = Math.hypot(tx,tz) || 1;
+        if(td > 4.2){ mam.x += tx/td*3.2*dt; mam.z += tz/td*3.2*dt; }
+        mam.g.position.set(mam.x, 0, mam.z);
+        mam.g.rotation.y = Math.atan2(tx, tz) + Math.PI;
+      }
+      /* 들이받히는 건 각자 자기 화면에서 */
+      const d = Math.hypot(player.x-mam.x, player.z-mam.z) || 1;
       mam.hitCd = Math.max(0, mam.hitCd - dt);
       if(d < 5.0 && mam.hitCd <= 0 && !airborne()){ mam.hitCd = 1.6; hurt(50); }
     }
   }
   /* 버티기 : 매머드와 멧돼지를 다 잡은 뒤 2분 동안 가시를 피해야 한다 */
   if(sans && sans.trial && !dead){
-    if(!paused) sans.survive -= dt;
+    if(!paused && !gst) sans.survive -= dt;      // 남은 시간은 동굴 방장이 센다
     if(S.sansAlly){
       /* 부하 샌즈가 곁에 있으면 판이 뜨지 않는다 — 대신 막고 되받아친다 */
       gdT -= dt;
@@ -6064,7 +6149,7 @@ function caveUpdate(dt){
   if(sans && sans.alive && !sans.down && !paused && !dead){
     sans.g.position.set(sans.x, Math.sin(clock.elapsedTime*1.6)*.18, sans.z);
     sans.g.rotation.y = Math.atan2(player.x-sans.x, player.z-sans.z);
-    if(sans.vuln || sans.trial){
+    if(!gst && (sans.vuln || sans.trial)){
       /* 가만히 있지 않는다 : 가끔 다른 자리로 옮긴다 */
       sans.blink -= dt;
       if(sans.blink <= 0){
@@ -6078,7 +6163,7 @@ function caveUpdate(dt){
   }
   /* 매머드와 멧돼지를 다 잡으면 그때부터 뼈다귀 아저씨를 맞힐 수 있다 */
   const left = Boars.list.length;
-  if(CAVE.phase === 'fight' && sans && !sans.vuln && !sans.trial &&
+  if(!gst && CAVE.phase === 'fight' && sans && !sans.vuln && !sans.trial &&
      live.length === 0 && left === 0){
     sans.trial = true; sans.vuln = true;          // 판이 없는 동안에는 쏠 수 있다
     sans.survive = SURVIVE_SEC; gdT = 3;
@@ -8546,6 +8631,114 @@ function netApplyBoars(list){
     if(!seen.has(b.nid)){ world.remove(b.g); Boars.list.splice(i,1); }
   }
 }
+/* =========================================================
+   🕳️ 동굴 : 동굴 방장이 알려 준 대로 따라간다
+   ========================================================= */
+/* 단계가 바뀜다 — 손님 화면에서도 같은 일이 일어난다 */
+function netCavePhase(ph, br){
+  const old = CAVE.phase;
+  if(br) CAVE.branch = br;
+  if(ph !== 'walk') caveSwingDoor(CAVE.doorG, 1.1);     // 앞문은 이미 열려 있다
+  if(ph === 'fight' && old !== 'fight'){
+    bossMusic(true);
+    toast('⚔️ 싸움이 시작됐어요 — 같이 막아요!');
+  }
+  if(ph === 'won' && old !== 'won'){
+    bossMusic(false);
+    toast('💀 샌즈가 쓰러졌어요!');
+  }
+  if((ph === 'seekwait' || ph === 'seek') && !CAVE.seekDoorG) seekDoorAppear();
+  if(ph === 'seek' && old !== 'seek'){
+    caveSwingDoor(CAVE.seekDoorG, 1.4);
+    bossMusic(false); seekMusic(true);
+    Snd.play('nightFall', 1.0); camShake = 1.8;
+    centerMsg('<h2>👁️ 시크</h2>'+
+              '<p>친구가 문을 열었습니다. <b>2분</b> 동안 같이 버티세요!</p>'+
+              '<p style="opacity:.85">시크는 노려본 뒤 <b>그 자리</b>로 곧장 돌진합니다.<br>'+
+              '가만히 있지 말고 <b>옆으로 피하세요!</b></p>', 5200);
+  }
+  CAVE.phase = ph;
+  if(ph === 'done' && old !== 'done') seekWin();        // 같이 버텼다
+}
+
+function netApplyCave(m){
+  if(m.ph && m.ph !== CAVE.phase) netCavePhase(m.ph, m.br);
+  else if(m.br) CAVE.branch = m.br;
+
+  /* 큰 적 (샌즈·매머드) */
+  for(const e of (m.bs || [])){
+    let b = bosses.find(x=>x.kind === e.k);
+    if(!b){
+      if(!e.a) continue;                                // 이미 쓰러진 것은 만들지 않는다
+      const g = (e.k === 'sans') ? sansModel() : mammothModel();
+      g.position.set(e.x, 0, e.z); world.add(g);
+      b = { kind:e.k, g, x:e.x, z:e.z, hp:e.h, max:e.m || e.h,
+            r:(e.k === 'sans' ? 1.5 : 3.6), alive:true, vuln:false, trial:false,
+            down:false, survive:0, blink:1e9, hitCd:0 };
+      bosses.push(b);
+      if(e.k === 'mammoth') toast('🐘 매머드가 나타났어요!');
+    }
+    b.x = e.x; b.z = e.z; b.hp = e.h; if(e.m) b.max = e.m;
+    b.vuln = !!e.v; b.trial = !!e.t; b.survive = e.s || 0;
+    if(!e.a && b.alive){                                // 방금 쓰러졌다
+      b.alive = false;
+      if(b.kind !== 'sans'){ world.remove(b.g); pickFx(b.x, 3.5, b.z, 0xffd76a); }
+    }
+    if(e.d && !b.down){                                 // 샌즈가 바닥에 눕는다
+      b.down = true;
+      if(b.g.userData.lt) b.g.userData.lt.intensity = 0;
+      if(b.g.userData.glow) b.g.userData.glow.visible = false;
+      b.g.rotation.set(-Math.PI/2, 0, 0);
+      b.g.position.set(b.x, 0.06, b.z);
+    }
+    if(!b.alive || b.down) continue;
+    if(b.kind === 'sans'){
+      if(b.g.userData.glow) b.g.userData.glow.visible = !!(b.vuln || b.trial);
+      if(b.g.userData.lt) b.g.userData.lt.intensity = (b.vuln || b.trial) ? 2.2 : 0;
+    } else {
+      b.g.position.set(b.x, 0, b.z);
+      b.g.rotation.y = Math.atan2(player.x - b.x, player.z - b.z) + Math.PI;
+    }
+  }
+
+  /* 멧돼지 — 바깥과 같은 방식으로 따라간다 */
+  netApplyBoars(m.bo || []);
+
+  /* 시크 */
+  if(m.sk){
+    if(!seek){
+      const g = seekModel(); g.position.set(m.sk.x, 0, m.sk.z); world.add(g);
+      seek = { g, x:m.sk.x, z:m.sk.z, state:m.sk.s, t:SEEK_WAIT, tx:0, tz:0,
+               hitCd:0, left:m.sk.l, dash:0 };
+    }
+    seek.x = m.sk.x; seek.z = m.sk.z; seek.state = m.sk.s; seek.left = m.sk.l;
+  }
+}
+
+/* 손님이 때린 것을 동굴 방장이 실제로 적용한다 */
+function netApplyCaveFx(m){
+  for(const [n, d] of (m.hit || [])){
+    const i = Boars.list.findIndex(b=>b.nid === n);
+    if(i >= 0) Boars.damage(i, d);
+  }
+  for(const n of (m.stun || [])){
+    const i = Boars.list.findIndex(b=>b.nid === n);
+    if(i >= 0) Boars.stun(i);
+  }
+  for(const [k, d] of (m.boss || [])){
+    const b = bosses.find(x=>x.kind === k);
+    if(b) bossHit(b, d);
+  }
+}
+
+/* 같이 싸운 사람에게도 샌즈의 상을 준다 */
+function netCaveWin(){
+  S.rpg = true; S.akScope = true;
+  S.bone = (S.bone || 0) + BONE_REWARD;
+  drawHotbar();
+  toast('🚀 RPG 와 🦴 뼈다귀 ' + BONE_REWARD + '개를 같이 받았어요!');
+}
+
 /* 다른 사람의 공격을 방장이 실제로 적용한다 */
 function netApplyFx(m){
   /* 손님이 준 피해를 방장이 실제로 적용한다 */
