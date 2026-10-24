@@ -36,6 +36,13 @@
     margin:auto;                       /* 내용이 길어도 위가 잘리지 않게 */
     padding:20px 20px 18px;box-shadow:0 12px 0 rgba(60,40,20,.28);text-align:center;}
   .card h1{margin:0 0 4px;font-size:clamp(20px,4.6vw,28px);letter-spacing:-.5px;line-height:1.25;}
+  /* 만든 곳 — 누르면 다른 게임도 볼 수 있다 */
+  .brand{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px;padding:3px 10px 4px;
+    font-size:clamp(10px,2.1vw,12px);font-weight:800;letter-spacing:2.2px;color:#8a7560;
+    text-decoration:none;border:2.5px solid #e3d5bb;border-radius:999px;background:#fff;
+    white-space:nowrap;}
+  .brand:hover{color:var(--clay);border-color:var(--clay);}
+  .brand:active{transform:translateY(1px);}
   .sub{margin:0 0 12px;color:#6b5a49;font-size:13px;line-height:1.55;}
   .keys{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin:0 0 12px;}
   .keys section{background:#fff;border:2.5px solid #e3d5bb;border-radius:13px;padding:9px 11px;}
@@ -545,6 +552,7 @@
         <button class="mini2" id="acctOut">로그아웃</button>
       </span>
     </div>
+    <a class="brand" href="https://tribe3dgames.vercel.app/" target="_blank" rel="noopener">🎮 TRIBE 3D GAMES</a>
     <h1>🏕️ 역사탐험대<br>선사시대 생존기</h1>
     <p class="sub">시간 여행을 통해 <b>구석기 → 신석기 → 청동기</b> 시대를 탐험하세요!<br>
       롭이 알려 주는 <b>순서</b>를 모두 마치면 다음 시대로 이동합니다.</p>
